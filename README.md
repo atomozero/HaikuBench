@@ -13,8 +13,7 @@ different systems can be collected and ranked.
 
 ## Screenshots
 
-The main window shows system information, benchmark results with standard
-deviation, and buttons to launch each benchmark individually.
+![HaikuBench](HaikuBench_v0.1.0.jpg)
 
 ## Quick Start
 
