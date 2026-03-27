@@ -227,6 +227,7 @@ GpuBenchGLView::_SwapWithOverlay()
 {
 	TempOverlay::ReadTemperatures();
 	TempOverlay::DrawOverlay(fCachedWidth + 1.0f, fCachedHeight + 1.0f);
+	glFinish();
 	SwapBuffers();
 }
 
