@@ -6,6 +6,7 @@
 #define TEAPOT_WINDOW_H
 
 
+#include <Bitmap.h>
 #include <GLView.h>
 #include <Messenger.h>
 #include <StringView.h>
@@ -45,6 +46,8 @@ private:
 			float				fCurrentFPS;
 			int32				fFrameCount;
 			bigtime_t			fLastFPSTime;
+			bool				fIsZink;
+			BBitmap*			fReadbackBitmap;
 };
 
 

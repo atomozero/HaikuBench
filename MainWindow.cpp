@@ -693,30 +693,38 @@ MainWindow::_ExportResults()
 			"Messaging", "Messaging"
 		};
 
-		fprintf(f, "## System Benchmark (%d runs per test)\n\n",
-			(int)fSysResults.runs);
-		fprintf(f, "| Section | Test | Mean | \xC2\xB1 StdDev | Unit |\n");
-		fprintf(f, "|---------|------|-----:|--------:|------|\n");
+		fprintf(f, "## System Benchmark\n\n");
+		fprintf(f, "_Per-test adaptive sampling: %d to %d runs, "
+			"stop when CoV < 2%%._\n\n",
+			(int)kBenchRuns, 10);
+		fprintf(f, "| Section | Test | Mean | \xC2\xB1 StdDev | p50 | p95 | "
+			"CoV | n | Unit |\n");
+		fprintf(f, "|---------|------|-----:|--------:|----:|----:|----:|"
+			"--:|------|\n");
 
 		for (int32 i = 0; i < SysBenchmark::kNumTests; i++) {
 			float val = SysBenchmark::ResultValue(fSysResults, i);
 			float sd = fSysResults.stddev[i];
-			if (val < 0.0f)
-				fprintf(f, "| %s | %s | N/A | | %s |\n",
-					sections[i], SysBenchmark::TestName(i),
-					units[i]);
-			else if (val >= 10000.0f)
-				fprintf(f, "| %s | %s | %.0f | %.0f | %s |\n",
-					sections[i], SysBenchmark::TestName(i),
-					val, sd, units[i]);
+			const BenchStats& bs = fSysResults.stats[i];
+			if (val < 0.0f) {
+				fprintf(f, "| %s | %s | N/A | | | | | | %s |\n",
+					sections[i], SysBenchmark::TestName(i), units[i]);
+				continue;
+			}
+			const char* fmt;
+			if (val >= 10000.0f)
+				fmt = "| %s | %s | %.0f | %.0f | %.0f | %.0f | %.1f%% | %d"
+					" | %s |\n";
 			else if (i == 2)
-				fprintf(f, "| %s | %s | %.2f | %.2f | %s |\n",
-					sections[i], SysBenchmark::TestName(i),
-					val, sd, units[i]);
+				fmt = "| %s | %s | %.2f | %.2f | %.2f | %.2f | %.1f%% | %d"
+					" | %s |\n";
 			else
-				fprintf(f, "| %s | %s | %.1f | %.1f | %s |\n",
-					sections[i], SysBenchmark::TestName(i),
-					val, sd, units[i]);
+				fmt = "| %s | %s | %.1f | %.1f | %.1f | %.1f | %.1f%% | %d"
+					" | %s |\n";
+			fprintf(f, fmt,
+				sections[i], SysBenchmark::TestName(i),
+				val, sd, bs.median, bs.p95,
+				bs.cov * 100.0f, (int)bs.nSamples, units[i]);
 		}
 
 		fprintf(f, "\n");
@@ -841,9 +849,24 @@ MainWindow::_ExportResults()
 			for (int32 i = 0; i < SysBenchmark::kNumTests; i++) {
 				float val = SysBenchmark::ResultValue(fSysResults, i);
 				float sd = fSysResults.stddev[i];
+				const BenchStats& bs = fSysResults.stats[i];
 				fprintf(j,
-					"      \"%s\": {\"mean\": %.2f, \"stddev\": %.2f}%s\n",
+					"      \"%s\": {"
+					"\"mean\": %.4f, "
+					"\"stddev\": %.4f, "
+					"\"median\": %.4f, "
+					"\"p95\": %.4f, "
+					"\"min\": %.4f, "
+					"\"max\": %.4f, "
+					"\"cov\": %.4f, "
+					"\"trimmed_mean\": %.4f, "
+					"\"n_samples\": %d, "
+					"\"n_dropped\": %d"
+					"}%s\n",
 					jsonKeys[i], val, sd,
+					bs.median, bs.p95, bs.min, bs.max,
+					bs.cov, bs.trimmedMean,
+					(int)bs.nSamples, (int)bs.nDropped,
 					(i < SysBenchmark::kNumTests - 1) ? "," : "");
 			}
 			fprintf(j, "    }\n");

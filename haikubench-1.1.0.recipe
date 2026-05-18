@@ -1,0 +1,68 @@
+SUMMARY="System benchmark suite for Haiku"
+DESCRIPTION="HaikuBench is a comprehensive system benchmark suite for Haiku OS. \
+It measures CPU (integer, float, multi-thread), memory (sequential read/write, \
+copy, latency), cache (L1/L2/L3), kernel primitives (semaphores, threads, ports, \
+areas, atomic ops), messaging (BMessage, BLooper), and graphics performance \
+(2D app_server drawing, OpenGL 3D, Vulkan compute).
+
+Features:
+* 20 system benchmark tests with adaptive sampling and statistical analysis
+* 24-test 2D benchmark from basic fills to software 3D teapot rendering
+* 2D hardware acceleration detection via accelerant driver identification
+* OpenGL GPU benchmark (fill rate, geometry, textures, blending, stencil)
+* Vulkan compute benchmark (optional, works with lavapipe or native drivers)
+* OpenGL teapot stress test with configurable teapot count
+* Real-time CPU/GPU temperature monitoring
+* Export results to Markdown and JSON"
+HOMEPAGE="https://github.com/atomozero/HaikuBench"
+COPYRIGHT="2025 Andrea Bernardi"
+LICENSE="MIT"
+REVISION="1"
+SOURCE_URI="https://github.com/atomozero/HaikuBench/archive/v$portVersion.tar.gz"
+CHECKSUM_SHA256=""
+SOURCE_DIR="HaikuBench-$portVersion"
+
+ARCHITECTURES="x86_64 !x86_gcc2"
+SECONDARY_ARCHITECTURES="x86"
+
+PROVIDES="
+	haikubench = $portVersion
+	app:HaikuBench = $portVersion
+	"
+REQUIRES="
+	haiku
+	lib:libGL
+	lib:libGLU
+	"
+
+BUILD_REQUIRES="
+	haiku_devel
+	devel:libGL
+	devel:libGLU
+	vulkan_devel
+	"
+BUILD_PREREQUIRES="
+	makefile_engine
+	cmd:g++
+	cmd:make
+	"
+
+BUILD()
+{
+	make $jobArgs
+}
+
+INSTALL()
+{
+	mkdir -p $appsDir
+	cp HaikuBench $appsDir/HaikuBench
+
+	# Set MIME type and icon
+	settype -t application/x-vnd.Be-elfexecutable $appsDir/HaikuBench
+	mimeset -f $appsDir/HaikuBench
+	if [ -f icon.hvif ]; then
+		addattr -t icon -f icon.hvif BEOS:ICON $appsDir/HaikuBench
+	fi
+
+	addAppDeskbarSymlink $appsDir/HaikuBench
+}

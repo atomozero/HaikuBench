@@ -9,8 +9,10 @@
 #include <OS.h>
 #include <String.h>
 
+#include "BenchStats.h"
 
-static const int32 kBenchRuns = 3;
+
+static const int32 kBenchRuns = 3;	// minimum runs (adaptive runner may take more)
 
 
 struct SysBenchResults {
@@ -44,11 +46,17 @@ struct SysBenchResults {
 	float	bmsgFlattenKOPS;
 	float	blooperMsgKOPS;
 
-	// Statistics (stddev for each test, same order)
+	// Statistics (stddev for each test, same order) — kept for
+	// backward compatibility with the original 1.0.0 result format.
 	float	stddev[20];
 
+	// Full per-test statistical summary (p50, p95, min, max, CoV,
+	// trimmed mean, number of samples actually taken). Index matches
+	// the 20-entry ordering of the flat fields above.
+	BenchStats	stats[20];
+
 	bool	valid;
-	int32	runs;
+	int32	runs;	// max runs across tests; per-test count in stats[i].nSamples
 };
 
 

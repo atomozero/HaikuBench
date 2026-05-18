@@ -73,7 +73,9 @@ GpuBenchGLView::GpuBenchGLView(BRect frame)
 	fCurrentTest(-1),
 	fRunning(false),
 	fCachedWidth(frame.Width()),
-	fCachedHeight(frame.Height())
+	fCachedHeight(frame.Height()),
+	fIsZink(false),
+	fReadbackBitmap(NULL)
 {
 	memset(&fResults, 0, sizeof(fResults));
 }
@@ -81,6 +83,7 @@ GpuBenchGLView::GpuBenchGLView(BRect frame)
 
 GpuBenchGLView::~GpuBenchGLView()
 {
+	delete fReadbackBitmap;
 }
 
 
@@ -92,6 +95,14 @@ GpuBenchGLView::AttachedToWindow()
 	LockGL();
 	_SetupGL();
 	_DetectGpu();
+
+	const char* renderer = (const char*)glGetString(GL_RENDERER);
+	if (renderer != NULL && strstr(renderer, "zink") != NULL) {
+		fIsZink = true;
+		fprintf(stderr, "HaikuBench: zink detected (%s), using manual "
+			"buffer swap workaround\n", renderer);
+	}
+
 	UnlockGL();
 }
 
@@ -227,8 +238,41 @@ GpuBenchGLView::_SwapWithOverlay()
 {
 	TempOverlay::ReadTemperatures();
 	TempOverlay::DrawOverlay(fCachedWidth + 1.0f, fCachedHeight + 1.0f);
-	glFinish();
-	SwapBuffers();
+
+	if (fIsZink) {
+		// Workaround: BGLView::SwapBuffers() doesn't work with Mesa zink.
+		// Manually read back the framebuffer and draw it as a BBitmap.
+		glFinish();
+
+		int32 w = (int32)(fCachedWidth + 1);
+		int32 h = (int32)(fCachedHeight + 1);
+		BRect bounds(0, 0, w - 1, h - 1);
+
+		if (fReadbackBitmap == NULL
+			|| fReadbackBitmap->Bounds() != bounds) {
+			delete fReadbackBitmap;
+			fReadbackBitmap = new BBitmap(bounds, B_RGBA32);
+		}
+
+		if (fReadbackBitmap != NULL && fReadbackBitmap->IsValid()) {
+			uint8* bits = (uint8*)fReadbackBitmap->Bits();
+			int32 bpr = fReadbackBitmap->BytesPerRow();
+
+			// Read each row flipped (GL origin is bottom-left)
+			for (int32 y = 0; y < h; y++) {
+				glReadPixels(0, h - 1 - y, w, 1,
+					GL_BGRA, GL_UNSIGNED_BYTE,
+					bits + y * bpr);
+			}
+
+			UnlockGL();
+			DrawBitmap(fReadbackBitmap, BPoint(0, 0));
+			LockGL();
+		}
+	} else {
+		glFinish();
+		SwapBuffers();
+	}
 }
 
 

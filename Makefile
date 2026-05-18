@@ -8,6 +8,9 @@ SRCS = \
 	MainWindow.cpp \
 	CpuDatabase.cpp \
 	SysBenchmark.cpp \
+	BenchStats.cpp \
+	AdaptiveRunner.cpp \
+	BenchWarmup.cpp \
 	TeapotWindow.cpp \
 	Bench2DWindow.cpp \
 	GpuBenchWindow.cpp \
@@ -36,8 +39,11 @@ clean:
 
 # Dependencies
 WattHaiku.o: MainWindow.h
-MainWindow.o: MainWindow.h SysBenchmark.h CpuDatabase.h TeapotWindow.h Bench2DWindow.h GpuBenchWindow.h VulkanBenchWindow.h
-SysBenchmark.o: SysBenchmark.h CpuDatabase.h
+MainWindow.o: MainWindow.h SysBenchmark.h CpuDatabase.h TeapotWindow.h Bench2DWindow.h GpuBenchWindow.h VulkanBenchWindow.h BenchStats.h
+SysBenchmark.o: SysBenchmark.h CpuDatabase.h BenchStats.h AdaptiveRunner.h BenchWarmup.h
+BenchStats.o: BenchStats.h
+AdaptiveRunner.o: AdaptiveRunner.h BenchStats.h
+BenchWarmup.o: BenchWarmup.h
 Bench2DWindow.o: Bench2DWindow.h
 CpuDatabase.o: CpuDatabase.h
 TeapotWindow.o: TeapotWindow.h TempOverlay.h

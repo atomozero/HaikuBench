@@ -1,3 +1,7 @@
 *.o
 obj/
 HaikuBench
+tests/test_bench_stats
+tests/test_adaptive_runner
+tests/test_bench_warmup
+tests/test_phase_a_integration

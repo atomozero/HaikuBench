@@ -31,9 +31,14 @@ make
 
 ## Benchmarks
 
-### System Bench — 20 tests, 3 runs each
+### System Bench — 20 tests, adaptive sampling
 
-Every test runs 3 times. The UI and exports report mean +/- standard deviation.
+Every test warms up the CPU for 200 ms, then samples adaptively: at
+least 3 runs, up to 10, stopping as soon as the **coefficient of
+variation** drops below 2%. The UI and exports report the trimmed
+mean (robust to a single outlier via the MAD rule) along with stddev,
+p50, p95 and the actual number of samples taken. JSON export also
+carries min/max, CoV and trimmed mean for automated leaderboards.
 
 | Section | Tests | What it measures |
 |---------|-------|------------------|
@@ -42,6 +47,15 @@ Every test runs 3 times. The UI and exports report mean +/- standard deviation.
 | **Cache** (3) | L1, L2, L3 | Per-level bandwidth with 8 independent accumulators |
 | **Kernel** (8) | Semaphores, Threads, Ports, Areas, Atomics, Syscalls | Haiku kernel primitive throughput and overhead |
 | **Messaging** (2) | BMessage Flatten, BLooper | Haiku IPC serialization and looper round-trip |
+
+### Running the test suite
+
+```sh
+./tests/run_all.sh
+```
+
+Builds and runs all Phase A unit tests (BenchStats, AdaptiveRunner,
+BenchWarmup) plus an integration smoke test (114 checks total).
 
 ### 2D Benchmark — 24 tests, 6 levels
 

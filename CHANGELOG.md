@@ -1,5 +1,73 @@
 # Changelog
 
+## Unreleased
+
+### Statistical analysis — Phase A (in progress)
+
+- **A1 — BenchStats module**: new `BenchStats.h` / `BenchStats.cpp` providing
+  a pure, testable statistics layer for benchmark samples.
+  - Mean, median (p50), **p95**, min, max
+  - Sample stddev (Bessel n−1) and coefficient of variation (CoV)
+  - **Robust trimmed mean** using the MAD rule (3 × 1.4826 × median
+    absolute deviation), which correctly rejects outliers even when a
+    single bad sample inflates stddev
+  - Handles invalid samples (`< 0.0f`) transparently, matching the
+    existing SysBenchmark convention
+  - 45-check unit test suite (`tests/test_bench_stats.cpp`), build with
+    `g++ -std=c++14 -O2 -Wall -Wextra -o tests/test_bench_stats
+    tests/test_bench_stats.cpp BenchStats.cpp`
+
+- **A2 — Adaptive sampling**: new `AdaptiveRunner.h` / `AdaptiveRunner.cpp`.
+  Replaces the fixed 3-runs-per-test loop with a **convergence-driven**
+  runner:
+  - Always takes `minRuns` samples (default 3), then keeps sampling as
+    long as CoV is above `targetCoV` (default 2%), up to `maxRuns`
+    (default 10).
+  - Stable tests terminate as early as 3 runs; noisy tests automatically
+    get more samples. Upper bound is `kMaxSamples` (32) regardless of
+    the caller's request, which prevents pathological configurations.
+  - Optional `ProgressFunc` callback for UI "run k / up to N, CoV x.x%".
+  - 24-check unit test suite (`tests/test_adaptive_runner.cpp`) covering
+    constant input, stable input, noisy-then-stable input, always-noisy
+    input (maxRuns cap), all-invalid input, NULL function guard and
+    `kMaxSamples` clamping.
+
+- **A3 — Warm-up primitives**: new `BenchWarmup.h` / `BenchWarmup.cpp`.
+  - `BenchWarmup::SpinMs(ms)` drives the CPU to peak frequency and
+    resolves lazy initialisation paths before measurement. Uses a
+    `volatile` accumulator with an asm barrier so `-O2` cannot elide
+    the loop. Default warm-up duration is 200 ms
+    (`BenchWarmup::kDefaultWarmupMs`).
+  - `BenchWarmup::TouchBuffer(ptr, size)` maps one byte per page of a
+    buffer, so cache/TLB latency does not contaminate the first timed
+    pass of memory-bound tests.
+  - 25-check unit test suite (`tests/test_bench_warmup.cpp`).
+
+- **A4 — Integration into SysBenchmark**: the system benchmark now uses
+  the Phase A stack end-to-end.
+  - `SysBenchmark::Run` calls `BenchWarmup::SpinMs(200)` before every
+    test and delegates sampling to `AdaptiveRunner::Run` (min 3, max
+    10 runs, target CoV 2%).
+  - `SysBenchResults` gains a `stats[20]` array of full `BenchStats`
+    (p50, p95, min, max, CoV, trimmed mean, n samples, n dropped)
+    alongside the original flat `mean` / `stddev` fields, which stay
+    for backward compatibility. The flat field is now populated with
+    the **trimmed mean** — identical to the raw mean on clean data,
+    but automatically rejects a single contaminated run (MAD rule).
+  - **Markdown export** gains per-test columns for p50, p95, CoV and
+    n (actual sample count). The old "N runs per test" header becomes
+    a methodology note: "adaptive sampling: 3 to 10 runs, stop when
+    CoV < 2%".
+  - **JSON export** now carries `median`, `p95`, `min`, `max`, `cov`,
+    `trimmed_mean`, `n_samples`, `n_dropped` for every test, enabling
+    richer leaderboards and automated regression analysis.
+  - Integration smoke test (`tests/test_phase_a_integration.cpp`)
+    validates the full warm-up → runner → stats pipeline against a
+    realistic synthetic workload (20 checks, ~0.7 s).
+  - Test orchestrator: `tests/run_all.sh` builds and runs all Phase A
+    test suites (114 checks total).
+
+
 ## 1.0.0 — 2026-03-26
 
 First public release.

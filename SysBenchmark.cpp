@@ -18,6 +18,9 @@
 #include <string.h>
 #include <sys/utsname.h>
 
+#include "AdaptiveRunner.h"
+#include "BenchStats.h"
+#include "BenchWarmup.h"
 #include "CpuDatabase.h"
 
 
@@ -100,45 +103,47 @@ SysBenchmark::Run(int32 currentTestCallback(int32, void*), void* cookie)
 
 	float* resultFields = &results.cpuIntegerMOPS;
 
+	// Adaptive sampling policy. Defaults mirror the old behaviour
+	// (minRuns = 3) but allow the runner to take up to 10 samples
+	// when CoV is still above 2%. This makes stable systems fast
+	// and noisy ones more accurate, without changing the contract
+	// for the simple case.
+	AdaptiveConfig cfg;
+	cfg.minRuns = kBenchRuns;
+	cfg.maxRuns = 10;
+	cfg.targetCoV = 0.02f;
+
+	int32 maxRunsObserved = 0;
+
 	for (int32 i = 0; i < kNumTests; i++) {
 		if (currentTestCallback != NULL)
 			currentTestCallback(i, cookie);
 
-		// Run each test kBenchRuns times
-		float samples[kBenchRuns];
-		for (int32 r = 0; r < kBenchRuns; r++)
-			samples[r] = tests[i]();
+		// Warm-up before every test: pushes CPU frequency governor to
+		// the top, resolves PLT/lazy-bound symbols, and pulls libc
+		// math tables into cache. 200 ms is a conservative default
+		// (see BenchWarmup::kDefaultWarmupMs).
+		BenchWarmup::SpinMs(BenchWarmup::kDefaultWarmupMs);
 
-		// Compute mean
-		float sum = 0.0f;
-		int32 validCount = 0;
-		for (int32 r = 0; r < kBenchRuns; r++) {
-			if (samples[r] >= 0.0f) {
-				sum += samples[r];
-				validCount++;
-			}
-		}
+		BenchStats s = AdaptiveRunner::Run(tests[i], cfg);
+		results.stats[i] = s;
 
-		float mean = (validCount > 0) ? sum / (float)validCount : -1.0f;
-		resultFields[i] = mean;
-
-		// Compute standard deviation
-		if (validCount >= 2) {
-			float sumSq = 0.0f;
-			for (int32 r = 0; r < kBenchRuns; r++) {
-				if (samples[r] >= 0.0f) {
-					float diff = samples[r] - mean;
-					sumSq += diff * diff;
-				}
-			}
-			results.stddev[i] = sqrtf(sumSq / (float)(validCount - 1));
+		// Populate legacy flat fields. Use the trimmed mean when
+		// valid — it is identical to the raw mean on clean data and
+		// strictly better when an outlier was detected.
+		if (s.valid) {
+			resultFields[i] = s.trimmedMean;
+			results.stddev[i] = s.stddev;
+			if (s.nSamples > maxRunsObserved)
+				maxRunsObserved = s.nSamples;
 		} else {
+			resultFields[i] = -1.0f;
 			results.stddev[i] = 0.0f;
 		}
 	}
 
 	results.valid = true;
-	results.runs = kBenchRuns;
+	results.runs = maxRunsObserved > 0 ? maxRunsObserved : kBenchRuns;
 	return results;
 }
 

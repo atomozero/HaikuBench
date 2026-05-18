@@ -6,6 +6,7 @@
 #define GPU_BENCH_WINDOW_H
 
 
+#include <Bitmap.h>
 #include <GLView.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
@@ -63,6 +64,8 @@ private:
 			volatile bool		fRunning;
 			float				fCachedWidth;
 			float				fCachedHeight;
+			bool				fIsZink;
+			BBitmap*			fReadbackBitmap;
 };
 
 
