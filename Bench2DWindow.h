@@ -20,6 +20,19 @@ enum {
 };
 
 
+struct Accel2DInfo {
+	BString		accelerantName;		// e.g., "intel_extreme"
+	BString		deviceName;			// from accelerant_device_info::name
+	BString		chipset;			// from accelerant_device_info::chipset
+	uint32		vramBytes;			// VRAM in bytes
+	bool		isHardwareAccel;	// true if native driver with 2D hooks
+	bool		hasFillRect;		// B_FILL_RECTANGLE hook present
+	bool		hasScreenBlit;		// B_SCREEN_TO_SCREEN_BLIT hook present
+	bool		hasInvertRect;		// B_INVERT_RECTANGLE hook present
+	bool		hooksChecked;		// true if clone detection succeeded
+};
+
+
 static const int32 kNumBench2DTests = 24;
 static const int32 kNumBench2DLevels = 6;
 
@@ -41,13 +54,16 @@ public:
 			void				RunBenchmark();
 			Bench2DResults		Results() const { return fResults; }
 			BString				DriverInfo() const { return fDriverInfo; }
+			Accel2DInfo			AccelInfo() const { return fAccelInfo; }
 
 private:
 			void				_DetectDriver();
+			void				_DetectAcceleration();
 			void				_RunTest(int32 testIndex);
 
 			Bench2DResults		fResults;
 			BString				fDriverInfo;
+			Accel2DInfo			fAccelInfo;
 };
 
 
@@ -64,9 +80,15 @@ private:
 			void				_UpdateTemperature();
 
 			Bench2DView*		fBenchView;
+			Bench2DResults		fCachedResults;
+			Accel2DInfo			fCachedAccelInfo;
+			BString				fCachedDriverInfo;
 			BMessenger			fTarget;
 
 			BStringView*		fDriverLabel;
+			BStringView*		fDeviceLabel;
+			BStringView*		fAccelStatusLabel;
+			BStringView*		fHooksLabel;
 			BStringView*		fLevelLabels[kNumBench2DLevels];
 			BStringView*		fTestLabels[kNumBench2DTests];
 			BStringView*		fStatusLabel;

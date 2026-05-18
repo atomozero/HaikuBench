@@ -21,10 +21,17 @@
 #include <SeparatorView.h>
 #include <Shape.h>
 
+#include <Accelerant.h>
+#include <Screen.h>
+#include <graphic_driver.h>
+
+#include <dirent.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 
 static const int32 kBenchW = 800;
@@ -745,6 +752,131 @@ Bench2DView::_DetectDriver()
 		}
 		pclose(fp);
 	}
+
+	// Detect 2D hardware acceleration via accelerant clone
+	_DetectAcceleration();
+}
+
+
+void
+Bench2DView::_DetectAcceleration()
+{
+	fAccelInfo.accelerantName = "";
+	fAccelInfo.deviceName = "";
+	fAccelInfo.chipset = "";
+	fAccelInfo.vramBytes = 0;
+	fAccelInfo.isHardwareAccel = false;
+	fAccelInfo.hasFillRect = false;
+	fAccelInfo.hasScreenBlit = false;
+	fAccelInfo.hasInvertRect = false;
+	fAccelInfo.hooksChecked = false;
+
+	// Step 1: Get device info via BScreen (public API)
+	BScreen screen;
+	accelerant_device_info devInfo;
+	memset(&devInfo, 0, sizeof(devInfo));
+	if (screen.GetDeviceInfo(&devInfo) == B_OK) {
+		fAccelInfo.deviceName = devInfo.name;
+		fAccelInfo.chipset = devInfo.chipset;
+		fAccelInfo.vramBytes = devInfo.memory;
+	}
+
+	// Step 2: Get accelerant signature from the graphics device
+	DIR* dir = opendir("/dev/graphics");
+	if (dir != NULL) {
+		BString devicePath;
+		BString fallbackPath;
+		struct dirent* entry;
+		while ((entry = readdir(dir)) != NULL) {
+			if (strcmp(entry->d_name, ".") == 0
+				|| strcmp(entry->d_name, "..") == 0)
+				continue;
+			BString path;
+			path.SetToFormat("/dev/graphics/%s", entry->d_name);
+			if (strcmp(entry->d_name, "vesa") == 0)
+				fallbackPath = path;
+			else
+				devicePath = path;
+		}
+		closedir(dir);
+
+		if (devicePath.Length() == 0)
+			devicePath = fallbackPath;
+
+		if (devicePath.Length() > 0) {
+			int fd = open(devicePath.String(), O_RDWR);
+			if (fd >= 0) {
+				char signature[1024] = {};
+				if (ioctl(fd, B_GET_ACCELERANT_SIGNATURE, signature,
+						sizeof(signature)) == B_OK) {
+					fAccelInfo.accelerantName = signature;
+				}
+				close(fd);
+			}
+		}
+	}
+
+	// Step 3: Determine 2D acceleration from the accelerant name.
+	// Haiku's accelerant drivers are well-known: native GPU drivers
+	// implement 2D hooks (fill_rectangle, screen_to_screen_blit),
+	// while generic drivers (vesa, framebuffer) do not.
+	BString name = fAccelInfo.accelerantName;
+	if (name.Length() == 0)
+		name = fDriverInfo;
+	name.ToLower();
+
+	// Known software-only drivers
+	static const char* kSoftwareOnly[] = {
+		"vesa", "framebuffer", "virtio_gpu", NULL
+	};
+
+	// Known hardware-accelerated drivers (with 2D hooks)
+	static const char* kHwAccelerated[] = {
+		"intel_extreme", "intel_810", "radeon_hd", "radeon",
+		"nvidia", "ati", "matrox", "via", "3dfx", "s3", "neomagic",
+		NULL
+	};
+
+	bool matched = false;
+
+	for (int32 i = 0; kSoftwareOnly[i] != NULL; i++) {
+		if (name.FindFirst(kSoftwareOnly[i]) >= 0) {
+			fAccelInfo.isHardwareAccel = false;
+			fAccelInfo.hasFillRect = false;
+			fAccelInfo.hasScreenBlit = false;
+			fAccelInfo.hasInvertRect = false;
+			fAccelInfo.hooksChecked = true;
+			matched = true;
+			break;
+		}
+	}
+
+	if (!matched) {
+		for (int32 i = 0; kHwAccelerated[i] != NULL; i++) {
+			if (name.FindFirst(kHwAccelerated[i]) >= 0) {
+				fAccelInfo.isHardwareAccel = true;
+				fAccelInfo.hasFillRect = true;
+				fAccelInfo.hasScreenBlit = true;
+				fAccelInfo.hasInvertRect = true;
+				fAccelInfo.hooksChecked = true;
+				matched = true;
+				break;
+			}
+		}
+	}
+
+	// Unknown driver: assume software only
+	if (!matched && name.Length() > 0) {
+		fAccelInfo.isHardwareAccel = false;
+		fAccelInfo.hooksChecked = false;
+	}
+
+	fprintf(stderr, "HaikuBench: 2D accel detection: hw=%d driver=%s "
+		"device=%s chipset=%s vram=%u\n",
+		fAccelInfo.isHardwareAccel, name.String(),
+		fAccelInfo.deviceName.String(),
+		fAccelInfo.chipset.String(),
+		(unsigned)fAccelInfo.vramBytes);
 }
 
 
@@ -1768,6 +1900,9 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 	fBenchView(NULL),
 	fTarget(target),
 	fDriverLabel(NULL),
+	fDeviceLabel(NULL),
+	fAccelStatusLabel(NULL),
+	fHooksLabel(NULL),
 	fStatusLabel(NULL),
 	fTempLabel(NULL),
 	fTempRunner(NULL)
@@ -1794,12 +1929,22 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 
 	fDriverLabel = _MakeResultLabel("driver", "Driver: detecting...",
 		kWhite2D, 11.0f, true);
+	fDeviceLabel = _MakeResultLabel("device", "Device: --",
+		kWhite2D, 11.0f);
+	fAccelStatusLabel = _MakeResultLabel("accel",
+		"2D Acceleration: detecting...",
+		kGray2D, 11.0f, true);
+	fHooksLabel = _MakeResultLabel("hooks", "",
+		kGray2D, 10.0f);
 	fTempLabel = _MakeResultLabel("temp", "Temp: reading...",
 		kGreen2D, 10.0f, true);
 
 	BLayoutBuilder::Group<>(sysInner, B_VERTICAL, 2)
 		.SetInsets(8, 8, 8, 8)
 		.Add(fDriverLabel)
+		.Add(fDeviceLabel)
+		.Add(fAccelStatusLabel)
+		.Add(fHooksLabel)
 		.Add(fTempLabel)
 	.End();
 	sysBox->AddChild(sysInner);
@@ -1954,6 +2099,13 @@ Bench2DWindow::MessageReceived(BMessage* message)
 				benchWin->Unlock();
 			}
 
+			// Cache results before closing the drawing window —
+			// fBenchView will be destroyed with benchWin, and
+			// BStrings in AccelInfo would become dangling.
+			fCachedResults = fBenchView->Results();
+			fCachedAccelInfo = fBenchView->AccelInfo();
+			fCachedDriverInfo = fBenchView->DriverInfo();
+
 			// Close drawing window
 			benchWin->PostMessage(B_QUIT_REQUESTED);
 			snooze(100000);
@@ -1984,13 +2136,11 @@ Bench2DWindow::MessageReceived(BMessage* message)
 bool
 Bench2DWindow::QuitRequested()
 {
-	if (fBenchView != NULL) {
-		Bench2DResults results = fBenchView->Results();
-
+	if (fCachedResults.valid) {
 		BMessage msg(kMsgBench2DResult);
 		for (int32 i = 0; i < kNumBench2DTests; i++) {
-			msg.AddFloat("ops_per_sec", results.opsPerSec[i]);
-			msg.AddFloat("mb_per_sec", results.mbPerSec[i]);
+			msg.AddFloat("ops_per_sec", fCachedResults.opsPerSec[i]);
+			msg.AddFloat("mb_per_sec", fCachedResults.mbPerSec[i]);
 		}
 		fTarget.SendMessage(&msg);
 	}
@@ -2002,15 +2152,95 @@ Bench2DWindow::QuitRequested()
 void
 Bench2DWindow::_UpdateResultLabels()
 {
-	if (fBenchView == NULL)
-		return;
-
-	Bench2DResults r = fBenchView->Results();
+	// Use cached copies — fBenchView may have been destroyed
+	// when the benchmark drawing window was closed.
+	Bench2DResults r = fCachedResults;
+	Accel2DInfo accel = fCachedAccelInfo;
 	BString text;
 
-	text.SetToFormat("Driver: %s", fBenchView->DriverInfo().String());
+	// Driver label — prefer accelerant name from ioctl (reliable),
+	// fall back to listimage only if ioctl didn't work
+	if (accel.accelerantName.Length() > 0) {
+		// Check if it's a patched (non-packaged) driver
+		BString driverText = fCachedDriverInfo;
+		if (driverText.FindFirst("PATCHED") >= 0)
+			text.SetToFormat("Driver: %s (PATCHED)",
+				accel.accelerantName.String());
+		else
+			text.SetToFormat("Driver: %s",
+				accel.accelerantName.String());
+	} else {
+		text.SetToFormat("Driver: %s", fCachedDriverInfo.String());
+	}
 	fDriverLabel->SetText(text.String());
 
+	// Device info (name, chipset, VRAM)
+	BString devText;
+	if (accel.deviceName.Length() > 0 || accel.chipset.Length() > 0) {
+		if (accel.deviceName.Length() > 0
+			&& accel.chipset.Length() > 0) {
+			devText.SetToFormat("Device: %s | %s",
+				accel.deviceName.String(), accel.chipset.String());
+		} else if (accel.deviceName.Length() > 0) {
+			devText.SetToFormat("Device: %s",
+				accel.deviceName.String());
+		} else {
+			devText.SetToFormat("Device: %s",
+				accel.chipset.String());
+		}
+	} else if (accel.accelerantName.Length() > 0) {
+		// No BScreen info, but we know the accelerant
+		devText.SetToFormat("Device: %s (via accelerant)",
+			accel.accelerantName.String());
+	}
+
+	if (accel.vramBytes > 0) {
+		BString vram;
+		if (accel.vramBytes >= 1024 * 1024)
+			vram.SetToFormat(" | VRAM: %" B_PRIu32 " MB",
+				accel.vramBytes / (1024 * 1024));
+		else
+			vram.SetToFormat(" | VRAM: %" B_PRIu32 " KB",
+				accel.vramBytes / 1024);
+		devText.Append(vram);
+	}
+
+	if (devText.Length() > 0) {
+		fDeviceLabel->SetText(devText.String());
+		fDeviceLabel->SetHighColor(kWhite2D);
+	} else {
+		fDeviceLabel->SetText("Device: not detected");
+		fDeviceLabel->SetHighColor(kGray2D);
+	}
+
+	// 2D Acceleration status
+	if (accel.isHardwareAccel) {
+		fAccelStatusLabel->SetText(
+			"2D Acceleration: ACTIVE (hardware)");
+		fAccelStatusLabel->SetHighColor(kGreen2D);
+	} else {
+		fAccelStatusLabel->SetText(
+			"2D Acceleration: NONE (software rendering)");
+		fAccelStatusLabel->SetHighColor(kRed2D);
+	}
+
+	// Hook details (only if clone detection succeeded)
+	if (accel.hooksChecked) {
+		text.SetToFormat("Hooks: FillRect %s | ScreenBlit %s "
+			"| InvertRect %s",
+			accel.hasFillRect ? "YES" : "no",
+			accel.hasScreenBlit ? "YES" : "no",
+			accel.hasInvertRect ? "YES" : "no");
+		fHooksLabel->SetText(text.String());
+		fHooksLabel->SetHighColor(
+			accel.isHardwareAccel ? kCyan2D : kGray2D);
+	} else {
+		fHooksLabel->SetText(
+			"Hooks: detection via heuristic (clone failed)");
+		fHooksLabel->SetHighColor(kGray2D);
+	}
+
+	// Test results
 	for (int32 i = 0; i < kNumBench2DTests; i++) {
 		int32 level = i / 4;
 		float ops = r.opsPerSec[i];
