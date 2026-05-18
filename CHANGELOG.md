@@ -1,8 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-05-18
 
-### Statistical analysis — Phase A (in progress)
+### 2D Hardware Acceleration Detection
+
+- Detect active accelerant driver via `ioctl B_GET_ACCELERANT_SIGNATURE`
+  on `/dev/graphics/` and classify as hardware-accelerated or software-only
+- Query device name, chipset and VRAM via `BScreen::GetDeviceInfo()`
+- Display FillRect, ScreenBlit, InvertRect hook availability
+- Known driver classification: intel_extreme, radeon_hd, nvidia, ati,
+  matrox, via = hardware; vesa, framebuffer, virtio_gpu = software
+- Fixed race condition: benchmark results are now cached before the
+  drawing window is destroyed, preventing BString use-after-free
+
+### Statistical Analysis — Phase A
 
 - **A1 — BenchStats module**: new `BenchStats.h` / `BenchStats.cpp` providing
   a pure, testable statistics layer for benchmark samples.
