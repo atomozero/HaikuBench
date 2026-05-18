@@ -22,34 +22,35 @@ SOURCE_URI="https://github.com/atomozero/HaikuBench/archive/v$portVersion.tar.gz
 CHECKSUM_SHA256="9cbea188a3bb36ab7a63e2e0066d75e28b894390bd20894e9e5f904f0df9e23f"
 SOURCE_DIR="HaikuBench-$portVersion"
 
-ARCHITECTURES="x86_64 !x86_gcc2"
+ARCHITECTURES="all !x86_gcc2"
 SECONDARY_ARCHITECTURES="x86"
 
 PROVIDES="
-	haikubench = $portVersion
+	haikubench$secondaryArchSuffix = $portVersion
 	app:HaikuBench = $portVersion
 	"
 REQUIRES="
-	haiku
-	lib:libGL
-	lib:libGLU
+	haiku$secondaryArchSuffix
+	lib:libGL$secondaryArchSuffix
+	lib:libGLU$secondaryArchSuffix
 	"
 
 BUILD_REQUIRES="
-	haiku_devel
-	devel:libGL
-	devel:libGLU
+	haiku${secondaryArchSuffix}_devel
+	devel:libGL$secondaryArchSuffix
+	devel:libGLU$secondaryArchSuffix
 	vulkan_devel
 	"
 BUILD_PREREQUIRES="
-	makefile_engine
-	cmd:g++
+	cmd:g++$secondaryArchSuffix
 	cmd:make
+	cmd:rc
 	"
 
 BUILD()
 {
 	make $jobArgs
+	rc -o HaikuBench.rsrc HaikuBench.rdef
 }
 
 INSTALL()
@@ -57,12 +58,6 @@ INSTALL()
 	mkdir -p $appsDir
 	cp HaikuBench $appsDir/HaikuBench
 
-	# Set MIME type and icon
-	settype -t application/x-vnd.Be-elfexecutable $appsDir/HaikuBench
-	mimeset -f $appsDir/HaikuBench
-	if [ -f icon.hvif ]; then
-		addattr -t icon -f icon.hvif BEOS:ICON $appsDir/HaikuBench
-	fi
-
+	xres -o $appsDir/HaikuBench HaikuBench.rsrc
 	addAppDeskbarSymlink $appsDir/HaikuBench
 }
