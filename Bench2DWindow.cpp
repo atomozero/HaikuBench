@@ -1898,6 +1898,8 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 		"HaikuBench — 2D Benchmark",
 		B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
 	fBenchView(NULL),
+	fBenchWin(NULL),
+	fBenchThread(-1),
 	fTarget(target),
 	fDriverLabel(NULL),
 	fDeviceLabel(NULL),
@@ -2068,6 +2070,10 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 Bench2DWindow::~Bench2DWindow()
 {
 	delete fTempRunner;
+	if (fBenchThread >= 0) {
+		status_t result;
+		wait_for_thread(fBenchThread, &result);
+	}
 }
 
 
@@ -2077,38 +2083,58 @@ Bench2DWindow::MessageReceived(BMessage* message)
 	switch (message->what) {
 		case kMsgBench2DStart:
 		{
+			if (fBenchThread >= 0)
+				break;
+
 			// Hide results window during benchmark
 			if (!IsHidden())
 				Hide();
 
 			// Open the drawing window for the benchmark
-			BWindow* benchWin = new BWindow(
+			fBenchWin = new BWindow(
 				BRect(50, 50, 50 + kBenchW - 1, 50 + kBenchH - 1),
-				"HaikuBench — 2D Benchmark Running...",
+				"HaikuBench \xE2\x80\x94 2D Benchmark Running...",
 				B_TITLED_WINDOW,
 				B_NOT_CLOSABLE | B_NOT_ZOOMABLE | B_NOT_RESIZABLE);
 
 			fBenchView = new Bench2DView();
-			benchWin->AddChild(fBenchView);
-			benchWin->Show();
+			fBenchWin->AddChild(fBenchView);
+			fBenchWin->Show();
 
-			snooze(200000);
+			// Run benchmark in a separate thread so the
+			// message loop stays responsive.
+			fBenchThread = spawn_thread(_BenchThread,
+				"2d_benchmark", B_NORMAL_PRIORITY, this);
+			if (fBenchThread >= 0)
+				resume_thread(fBenchThread);
+			break;
+		}
 
-			if (benchWin->Lock()) {
-				fBenchView->RunBenchmark();
-				benchWin->Unlock();
+		case kMsgBench2DDone:
+		{
+			// Wait for the benchmark thread to finish
+			if (fBenchThread >= 0) {
+				status_t result;
+				wait_for_thread(fBenchThread, &result);
+				fBenchThread = -1;
 			}
 
 			// Cache results before closing the drawing window —
-			// fBenchView will be destroyed with benchWin, and
+			// fBenchView will be destroyed with fBenchWin, and
 			// BStrings in AccelInfo would become dangling.
-			fCachedResults = fBenchView->Results();
-			fCachedAccelInfo = fBenchView->AccelInfo();
-			fCachedDriverInfo = fBenchView->DriverInfo();
+			if (fBenchWin != NULL && fBenchWin->Lock()) {
+				fCachedResults = fBenchView->Results();
+				fCachedAccelInfo = fBenchView->AccelInfo();
+				fCachedDriverInfo = fBenchView->DriverInfo();
+				fBenchWin->Unlock();
+			}
 
 			// Close drawing window
-			benchWin->PostMessage(B_QUIT_REQUESTED);
-			snooze(100000);
+			if (fBenchWin != NULL) {
+				fBenchWin->PostMessage(B_QUIT_REQUESTED);
+				fBenchWin = NULL;
+				fBenchView = NULL;
+			}
 
 			// Populate and show results window
 			_UpdateResultLabels();
@@ -2136,6 +2162,10 @@ Bench2DWindow::MessageReceived(BMessage* message)
 bool
 Bench2DWindow::QuitRequested()
 {
+	// Don't close while the benchmark is running
+	if (fBenchThread >= 0)
+		return false;
+
 	if (fCachedResults.valid) {
 		BMessage msg(kMsgBench2DResult);
 		for (int32 i = 0; i < kNumBench2DTests; i++) {
@@ -2320,4 +2350,23 @@ Bench2DWindow::_UpdateTemperature()
 		fTempLabel->SetHighColor(kGray2D);
 		fTempLabel->SetText("Temp: N/A");
 	}
+}
+
+
+/*static*/ int32
+Bench2DWindow::_BenchThread(void* data)
+{
+	Bench2DWindow* window = static_cast<Bench2DWindow*>(data);
+
+	// Give the benchmark window time to show
+	snooze(200000);
+
+	if (window->fBenchWin != NULL && window->fBenchWin->Lock()) {
+		window->fBenchView->RunBenchmark();
+		window->fBenchWin->Unlock();
+	}
+
+	// Notify the results window that we're done
+	BMessenger(window).SendMessage(kMsgBench2DDone);
+	return 0;
 }

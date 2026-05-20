@@ -16,6 +16,7 @@
 enum {
 	kMsgBench2DResult	= 'b2rs',
 	kMsgBench2DStart	= 'b2st',
+	kMsgBench2DDone		= 'b2dn',
 	kMsgBench2DTempUpd	= 'b2tm'
 };
 
@@ -79,7 +80,11 @@ private:
 			void				_UpdateResultLabels();
 			void				_UpdateTemperature();
 
+	static	int32				_BenchThread(void* data);
+
 			Bench2DView*		fBenchView;
+			BWindow*			fBenchWin;
+			thread_id			fBenchThread;
 			Bench2DResults		fCachedResults;
 			Accel2DInfo			fCachedAccelInfo;
 			BString				fCachedDriverInfo;

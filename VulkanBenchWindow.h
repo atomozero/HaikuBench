@@ -35,6 +35,7 @@ public:
 	virtual						~VulkanBenchWindow();
 
 	virtual	void				MessageReceived(BMessage* message);
+	virtual	bool				QuitRequested();
 
 private:
 			void				_RunBenchmark();

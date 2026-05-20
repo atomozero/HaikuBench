@@ -447,6 +447,15 @@ VulkanBenchWindow::~VulkanBenchWindow()
 }
 
 
+bool
+VulkanBenchWindow::QuitRequested()
+{
+	if (fBenchThread >= 0)
+		return false;
+	return true;
+}
+
+
 void
 VulkanBenchWindow::MessageReceived(BMessage* message)
 {
@@ -548,8 +557,10 @@ VulkanBenchWindow::_InitVulkan()
 	}
 	delete[] qfProps;
 
-	if (fQueueFamily == UINT32_MAX)
+	if (fQueueFamily == UINT32_MAX) {
+		_Cleanup();
 		return false;
+	}
 
 	// Create logical device
 	float priority = 1.0f;
@@ -565,8 +576,10 @@ VulkanBenchWindow::_InitVulkan()
 	devCI.pQueueCreateInfos = &queueCI;
 
 	VkDevice device;
-	if (dvkCreateDevice(physDev, &devCI, NULL, &device) != VK_SUCCESS)
+	if (dvkCreateDevice(physDev, &devCI, NULL, &device) != VK_SUCCESS) {
+		_Cleanup();
 		return false;
+	}
 	fDevice = device;
 
 	VkQueue queue;
@@ -580,8 +593,10 @@ VulkanBenchWindow::_InitVulkan()
 	poolCI.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	VkCommandPool cmdPool;
-	if (dvkCreateCommandPool(device, &poolCI, NULL, &cmdPool) != VK_SUCCESS)
+	if (dvkCreateCommandPool(device, &poolCI, NULL, &cmdPool) != VK_SUCCESS) {
+		_Cleanup();
 		return false;
+	}
 	fCommandPool = cmdPool;
 
 	// Allocate command buffer
@@ -592,8 +607,10 @@ VulkanBenchWindow::_InitVulkan()
 	cmdAI.commandBufferCount = 1;
 
 	VkCommandBuffer cmdBuf;
-	if (dvkAllocateCommandBuffers(device, &cmdAI, &cmdBuf) != VK_SUCCESS)
+	if (dvkAllocateCommandBuffers(device, &cmdAI, &cmdBuf) != VK_SUCCESS) {
+		_Cleanup();
 		return false;
+	}
 	fCommandBuffer = cmdBuf;
 
 	return true;
@@ -766,7 +783,12 @@ VulkanBenchWindow::_TestComputeShader()
 	dslCI.pBindings = &binding;
 
 	VkDescriptorSetLayout dsLayout;
-	dvkCreateDescriptorSetLayout(device, &dslCI, NULL, &dsLayout);
+	if (dvkCreateDescriptorSetLayout(device, &dslCI, NULL, &dsLayout)
+			!= VK_SUCCESS) {
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	// Pipeline layout
 	VkPipelineLayoutCreateInfo plCI = {};
@@ -775,7 +797,13 @@ VulkanBenchWindow::_TestComputeShader()
 	plCI.pSetLayouts = &dsLayout;
 
 	VkPipelineLayout pipeLayout;
-	dvkCreatePipelineLayout(device, &plCI, NULL, &pipeLayout);
+	if (dvkCreatePipelineLayout(device, &plCI, NULL, &pipeLayout)
+			!= VK_SUCCESS) {
+		dvkDestroyDescriptorSetLayout(device, dsLayout, NULL);
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	// Compute pipeline
 	VkComputePipelineCreateInfo cpCI = {};
@@ -809,7 +837,16 @@ VulkanBenchWindow::_TestComputeShader()
 	dpCI.pPoolSizes = &poolSize;
 
 	VkDescriptorPool descPool;
-	dvkCreateDescriptorPool(device, &dpCI, NULL, &descPool);
+	if (dvkCreateDescriptorPool(device, &dpCI, NULL, &descPool)
+			!= VK_SUCCESS) {
+		dvkDestroyPipeline(device, pipeline, NULL);
+		dvkDestroyShaderModule(device, shaderModule, NULL);
+		dvkDestroyPipelineLayout(device, pipeLayout, NULL);
+		dvkDestroyDescriptorSetLayout(device, dsLayout, NULL);
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	VkDescriptorSetAllocateInfo dsAI = {};
 	dsAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -818,7 +855,17 @@ VulkanBenchWindow::_TestComputeShader()
 	dsAI.pSetLayouts = &dsLayout;
 
 	VkDescriptorSet descSet;
-	dvkAllocateDescriptorSets(device, &dsAI, &descSet);
+	if (dvkAllocateDescriptorSets(device, &dsAI, &descSet)
+			!= VK_SUCCESS) {
+		dvkDestroyDescriptorPool(device, descPool, NULL);
+		dvkDestroyPipeline(device, pipeline, NULL);
+		dvkDestroyShaderModule(device, shaderModule, NULL);
+		dvkDestroyPipelineLayout(device, pipeLayout, NULL);
+		dvkDestroyDescriptorSetLayout(device, dsLayout, NULL);
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	VkDescriptorBufferInfo bufInfo = {};
 	bufInfo.buffer = buffer;
@@ -838,7 +885,16 @@ VulkanBenchWindow::_TestComputeShader()
 	VkFenceCreateInfo fenceCI = {};
 	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	VkFence fence;
-	dvkCreateFence(device, &fenceCI, NULL, &fence);
+	if (dvkCreateFence(device, &fenceCI, NULL, &fence) != VK_SUCCESS) {
+		dvkDestroyDescriptorPool(device, descPool, NULL);
+		dvkDestroyPipeline(device, pipeline, NULL);
+		dvkDestroyShaderModule(device, shaderModule, NULL);
+		dvkDestroyPipelineLayout(device, pipeLayout, NULL);
+		dvkDestroyDescriptorSetLayout(device, dsLayout, NULL);
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	// Run benchmark: dispatch many times, measure total time
 	const uint32 workGroups = numElements / 256;
@@ -958,7 +1014,13 @@ VulkanBenchWindow::_TestBufferCopy()
 	VkFenceCreateInfo fenceCI = {};
 	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	VkFence fence;
-	dvkCreateFence(device, &fenceCI, NULL, &fence);
+	if (dvkCreateFence(device, &fenceCI, NULL, &fence) != VK_SUCCESS) {
+		dvkFreeMemory(device, memA, NULL);
+		dvkFreeMemory(device, memB, NULL);
+		dvkDestroyBuffer(device, bufA, NULL);
+		dvkDestroyBuffer(device, bufB, NULL);
+		return -1.0f;
+	}
 
 	int32 copies = 0;
 	bigtime_t start = system_time();
@@ -1051,7 +1113,11 @@ VulkanBenchWindow::_TestFillRate()
 	VkFenceCreateInfo fenceCI = {};
 	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	VkFence fence;
-	dvkCreateFence(device, &fenceCI, NULL, &fence);
+	if (dvkCreateFence(device, &fenceCI, NULL, &fence) != VK_SUCCESS) {
+		dvkFreeMemory(device, memory, NULL);
+		dvkDestroyBuffer(device, buffer, NULL);
+		return -1.0f;
+	}
 
 	int32 fills = 0;
 	bigtime_t start = system_time();
@@ -1206,6 +1272,11 @@ VulkanBenchWindow::_BenchThread(void* data)
 {
 	VulkanBenchWindow* window = static_cast<VulkanBenchWindow*>(data);
 	window->_RunBenchmark();
-	window->fBenchThread = -1;
+
+	if (window->Lock()) {
+		window->fBenchThread = -1;
+		window->Unlock();
+	}
+
 	return 0;
 }

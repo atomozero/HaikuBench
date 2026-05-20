@@ -265,8 +265,14 @@ GpuBenchGLView::_SwapWithOverlay()
 					bits + y * bpr);
 			}
 
+			// DrawBitmap is a BView call that requires the
+			// window lock. Release GL, acquire window lock,
+			// draw, release window lock, reacquire GL.
 			UnlockGL();
-			DrawBitmap(fReadbackBitmap, BPoint(0, 0));
+			if (Window()->Lock()) {
+				DrawBitmap(fReadbackBitmap, BPoint(0, 0));
+				Window()->Unlock();
+			}
 			LockGL();
 		}
 	} else {
@@ -973,9 +979,9 @@ GpuBenchWindow::_BenchThread(void* data)
 		window->_UpdateLabels();
 		window->fStatusLabel->SetText("GPU benchmark complete!");
 		window->fStatusLabel->SetHighColor(kGreen);
+		window->fBenchThread = -1;
 		window->Unlock();
 	}
 
-	window->fBenchThread = -1;
 	return 0;
 }
