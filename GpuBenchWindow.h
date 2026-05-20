@@ -6,6 +6,8 @@
 #define GPU_BENCH_WINDOW_H
 
 
+#include <atomic>
+
 #include <Bitmap.h>
 #include <GLView.h>
 #include <MessageRunner.h>
@@ -61,7 +63,7 @@ private:
 			GpuBenchResults		fResults;
 			BString				fGpuInfo;
 			int32				fCurrentTest;
-			volatile bool		fRunning;
+			std::atomic<bool>	fRunning;
 			float				fCachedWidth;
 			float				fCachedHeight;
 			bool				fIsZink;

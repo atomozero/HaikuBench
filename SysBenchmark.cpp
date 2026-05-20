@@ -6,6 +6,8 @@
 
 #include "SysBenchmark.h"
 
+#include <atomic>
+
 #include <Looper.h>
 #include <Message.h>
 #include <Messenger.h>
@@ -213,7 +215,7 @@ float
 SysBenchmark::_TestCpuInteger()
 {
 	// Integer arithmetic: additions, multiplications, divisions, bit ops
-	volatile int64 a = 1, b = 2, c = 3;
+	int64 a = 1, b = 2, c = 3;
 	int64 ops = 0;
 
 	bigtime_t start = system_time();
@@ -230,6 +232,7 @@ SysBenchmark::_TestCpuInteger()
 			a = (b ^ c) * ((a & 0xFFF) + 1);
 			b = a + c - (b >> 2);
 		}
+		__asm__ __volatile__("" : "+r"(a), "+r"(b), "+r"(c));
 		ops += 80000; // 8 ops * 10000
 	}
 
@@ -239,7 +242,7 @@ SysBenchmark::_TestCpuInteger()
 
 
 struct CpuThreadData {
-	volatile bool*	running;
+	std::atomic<bool>*	running;
 	int64			ops;
 };
 
@@ -248,10 +251,10 @@ static int32
 _CpuWorker(void* data)
 {
 	CpuThreadData* td = static_cast<CpuThreadData*>(data);
-	volatile int64 a = 1, b = 2, c = 3;
+	int64 a = 1, b = 2, c = 3;
 	int64 ops = 0;
 
-	while (*td->running) {
+	while (td->running->load(std::memory_order_relaxed)) {
 		for (int32 i = 0; i < 10000; i++) {
 			a = a + b * c;
 			b = (a ^ c) + (b >> 1);
@@ -262,6 +265,7 @@ _CpuWorker(void* data)
 			a = (b ^ c) * ((a & 0xFFF) + 1);
 			b = a + c - (b >> 2);
 		}
+		__asm__ __volatile__("" : "+r"(a), "+r"(b), "+r"(c));
 		ops += 80000;
 	}
 
@@ -274,7 +278,7 @@ float
 SysBenchmark::_TestCpuFloat()
 {
 	// Floating point: sin, cos, sqrt, multiply, add
-	volatile double a = 1.1, b = 2.2, c = 3.3;
+	double a = 1.1, b = 2.2, c = 3.3;
 	int64 ops = 0;
 
 	bigtime_t start = system_time();
@@ -289,6 +293,7 @@ SysBenchmark::_TestCpuFloat()
 			b = exp(fmod(a, 5.0)) * 0.001 + b;
 			c = pow(fabs(a) + 1.0, 0.3) + sin(b);
 		}
+		__asm__ __volatile__("" : "+r"(a), "+r"(b), "+r"(c));
 		ops += 30000; // 6 ops * 5000
 	}
 
@@ -307,7 +312,7 @@ SysBenchmark::_TestCpuMulti()
 		cpuCount = 1;
 
 	// First measure single-thread performance
-	volatile bool singleRunning = true;
+	std::atomic<bool> singleRunning(true);
 	CpuThreadData singleData;
 	singleData.running = &singleRunning;
 	singleData.ops = 0;
@@ -322,7 +327,7 @@ SysBenchmark::_TestCpuMulti()
 	int64 singleOps = singleData.ops;
 
 	// Now measure multi-thread (same duration)
-	volatile bool multiRunning = true;
+	std::atomic<bool> multiRunning(true);
 	CpuThreadData* multiData = new CpuThreadData[cpuCount];
 	thread_id* threads = new thread_id[cpuCount];
 
@@ -596,7 +601,7 @@ SysBenchmark::_TestSemAcquireRelease()
 
 struct SemContentionData {
 	sem_id			sem;
-	volatile bool*	running;
+	std::atomic<bool>*	running;
 	int64			ops;
 };
 
@@ -607,7 +612,7 @@ _SemContentionWorker(void* data)
 	SemContentionData* sd = static_cast<SemContentionData*>(data);
 	int64 ops = 0;
 
-	while (*sd->running) {
+	while (sd->running->load(std::memory_order_relaxed)) {
 		for (int32 i = 0; i < 1000; i++) {
 			acquire_sem(sd->sem);
 			release_sem(sd->sem);
@@ -633,7 +638,7 @@ SysBenchmark::_TestSemContention()
 	if (sem < 0)
 		return 0.0f;
 
-	volatile bool running = true;
+	std::atomic<bool> running(true);
 	SemContentionData* data = new SemContentionData[cpuCount];
 	thread_id* threads = new thread_id[cpuCount];
 
@@ -939,7 +944,7 @@ SysBenchmark::_TestBMessageFlatten()
 // Helper looper for BLooper messaging test
 class BenchLooper : public BLooper {
 public:
-	BenchLooper(int64* counter, volatile bool* running)
+	BenchLooper(int64* counter, std::atomic<bool>* running)
 		: BLooper("BenchLooper"),
 		  fCounter(counter),
 		  fRunning(running)
@@ -949,7 +954,7 @@ public:
 	void MessageReceived(BMessage* message) {
 		if (message->what == 'ping') {
 			atomic_add64(fCounter, 1);
-			if (*fRunning) {
+			if (fRunning->load(std::memory_order_relaxed)) {
 				// Echo back
 				BMessenger sender;
 				if (message->FindMessenger("reply_to", &sender) == B_OK)
@@ -962,7 +967,7 @@ public:
 
 private:
 	int64*				fCounter;
-	volatile bool*		fRunning;
+	std::atomic<bool>*	fRunning;
 };
 
 
@@ -970,7 +975,7 @@ float
 SysBenchmark::_TestBLooperMsg()
 {
 	int64 counter = 0;
-	volatile bool running = true;
+	std::atomic<bool> running(true);
 
 	// Create two loopers that ping-pong messages
 	BenchLooper* looperA = new BenchLooper(&counter, &running);

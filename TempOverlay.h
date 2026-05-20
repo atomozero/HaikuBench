@@ -6,6 +6,8 @@
 #define TEMP_OVERLAY_H
 
 
+#include <atomic>
+
 #include <SupportDefs.h>
 
 
@@ -26,6 +28,7 @@ private:
 	static	float				sCritical[kMaxZones];
 	static	int32				sZoneCount;
 	static	bigtime_t			sLastReadTime;
+	static	std::atomic_flag	sLock;
 };
 
 

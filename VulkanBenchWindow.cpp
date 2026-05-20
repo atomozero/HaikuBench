@@ -275,8 +275,10 @@ _CompileComputeShader(VkDevice device, VkShaderModule* module)
 		ret = system("glslangValidator -V -o /tmp/hbench_comp.spv "
 			"/tmp/hbench_comp.glsl 2>/dev/null");
 	}
-	if (ret != 0)
+	if (ret != 0) {
+		remove("/tmp/hbench_comp.glsl");
 		return false;
+	}
 
 	// Read SPIR-V binary
 	f = fopen("/tmp/hbench_comp.spv", "rb");
@@ -292,8 +294,15 @@ _CompileComputeShader(VkDevice device, VkShaderModule* module)
 		fclose(f);
 		return false;
 	}
-	fread(code, 1, size, f);
+	size_t bytesRead = fread(code, 1, size, f);
 	fclose(f);
+
+	if (bytesRead != size) {
+		free(code);
+		remove("/tmp/hbench_comp.glsl");
+		remove("/tmp/hbench_comp.spv");
+		return false;
+	}
 
 	VkShaderModuleCreateInfo ci = {};
 	ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

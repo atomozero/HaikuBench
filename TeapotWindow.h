@@ -6,6 +6,8 @@
 #define TEAPOT_WINDOW_H
 
 
+#include <atomic>
+
 #include <Bitmap.h>
 #include <GLView.h>
 #include <Messenger.h>
@@ -70,7 +72,7 @@ private:
 			BStringView*		fCountLabel;
 			BStringView*		fFPSLabel;
 			thread_id			fRenderThread;
-			volatile bool		fRendering;
+			std::atomic<bool>	fRendering;
 };
 
 

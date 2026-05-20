@@ -18,6 +18,7 @@ float TempOverlay::sTemp[kMaxZones] = {};
 float TempOverlay::sCritical[kMaxZones] = {};
 int32 TempOverlay::sZoneCount = 0;
 bigtime_t TempOverlay::sLastReadTime = 0;
+std::atomic_flag TempOverlay::sLock = ATOMIC_FLAG_INIT;
 
 
 void
@@ -27,6 +28,10 @@ TempOverlay::ReadTemperatures()
 	bigtime_t now = system_time();
 	if (now - sLastReadTime < 1000000 && sZoneCount > 0)
 		return;
+
+	// Acquire spinlock to protect static state
+	while (sLock.test_and_set(std::memory_order_acquire))
+		;
 	sLastReadTime = now;
 
 	sZoneCount = 0;
@@ -66,6 +71,8 @@ TempOverlay::ReadTemperatures()
 			sZoneCount = i + 1;
 		}
 	}
+
+	sLock.clear(std::memory_order_release);
 }
 
 
@@ -74,6 +81,10 @@ TempOverlay::DrawOverlay(float viewWidth, float viewHeight)
 {
 	if (sZoneCount <= 0)
 		return;
+
+	// Acquire spinlock to read consistent temperature data
+	while (sLock.test_and_set(std::memory_order_acquire))
+		;
 
 	// Save GL state
 	glPushAttrib(GL_ALL_ATTRIB_BITS);
@@ -144,6 +155,8 @@ TempOverlay::DrawOverlay(float viewWidth, float viewHeight)
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();
 	glPopAttrib();
+
+	sLock.clear(std::memory_order_release);
 }
 
 
