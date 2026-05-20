@@ -56,6 +56,9 @@ private:
 			BStringView*		fSysTestLabels[SysBenchmark::kNumTests];
 			BStringView*		fSysStatusLabel;
 
+			// Score
+			BStringView*		fScoreLabels[6]; // 5 categories + overall
+
 			// External benchmark results
 			BStringView*		fTeapotResultLabel;
 			BStringView*		fBench2DResultLabel;

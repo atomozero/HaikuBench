@@ -25,6 +25,7 @@
 
 #include "Bench2DWindow.h"
 #include "GpuBenchWindow.h"
+#include "ScoreBaseline.h"
 #include "SysBenchmark.h"
 #include "TeapotWindow.h"
 #include "Version.h"
@@ -422,6 +423,32 @@ MainWindow::_CreateResultsPanel()
 		BSize(fVkResultLabel->StringWidth(
 			"  Vulkan Compute        999.9 pts   "), B_SIZE_UNSET));
 
+	// Score labels (SPEC-style, baseline = 1000)
+	BStringView* scoreHeader = _MakeLabel("scoreH",
+		"Score (baseline = 1000)", kGreen, 11.0f, true);
+	{
+		const char* catLabels[] = {
+			"  CPU", "  Memory", "  Cache", "  Kernel", "  Messaging"
+		};
+		BFont scoreMono(be_fixed_font);
+		scoreMono.SetSize(11.0f);
+		for (int32 i = 0; i < 5; i++) {
+			BString name;
+			name.SetToFormat("score%" B_PRId32, i);
+			BString text;
+			text.SetToFormat("  %-22s       --", catLabels[i]);
+			fScoreLabels[i] = _MakeLabel(name.String(),
+				text.String(), kGray, 11.0f);
+			fScoreLabels[i]->SetFont(&scoreMono);
+		}
+		fScoreLabels[5] = _MakeLabel("scoreTotal",
+			"  OVERALL                    --", kGreen, 11.0f, true);
+		BFont scoreBold(be_fixed_font);
+		scoreBold.SetSize(11.0f);
+		scoreBold.SetFace(B_BOLD_FACE);
+		fScoreLabels[5]->SetFont(&scoreBold);
+	}
+
 	BLayoutBuilder::Group<>(inner, B_HORIZONTAL, 10)
 		.SetInsets(8, 8, 8, 8)
 		// Left column: CPU, Memory, Cache, Graphics
@@ -465,6 +492,14 @@ MainWindow::_CreateResultsPanel()
 			.Add(msgHeader)
 			.Add(fSysTestLabels[18])
 			.Add(fSysTestLabels[19])
+			.Add(new BSeparatorView(B_HORIZONTAL))
+			.Add(scoreHeader)
+			.Add(fScoreLabels[0])
+			.Add(fScoreLabels[1])
+			.Add(fScoreLabels[2])
+			.Add(fScoreLabels[3])
+			.Add(fScoreLabels[4])
+			.Add(fScoreLabels[5])
 			.Add(new BSeparatorView(B_HORIZONTAL))
 			.Add(fSysStatusLabel)
 			.AddGlue()
@@ -587,6 +622,27 @@ MainWindow::_UpdateSysResults()
 		}
 		fSysTestLabels[i]->SetText(text.String());
 		fSysTestLabels[i]->SetHighColor(sectionColors[i]);
+	}
+
+	// Compute and display SPEC-style score
+	ScoreResult score = ComputeScore(fSysResults);
+	if (score.valid) {
+		static const rgb_color catColors[] = {
+			kCyan, kOrange, kYellow, kPurple,
+			{220, 120, 180, 255}
+		};
+		for (int32 i = 0; i < kNumScoreCategories; i++) {
+			BString text;
+			text.SetToFormat("  %-22s  %7.0f",
+				kScoreCategoryNames[i], score.categoryScore[i]);
+			fScoreLabels[i]->SetText(text.String());
+			fScoreLabels[i]->SetHighColor(catColors[i]);
+		}
+		BString text;
+		text.SetToFormat("  OVERALL               %7.0f",
+			score.overall);
+		fScoreLabels[5]->SetText(text.String());
+		fScoreLabels[5]->SetHighColor(kGreen);
 	}
 }
 
@@ -755,55 +811,24 @@ MainWindow::_ExportResults()
 	else
 		fprintf(f, "- Vulkan: *not yet run*\n");
 
-	// Overall score for leaderboard
+	// SPEC-style score (geometric mean of ratios vs baseline = 1000)
 	if (fSysResults.valid) {
-		// Weighted composite score from key subsystems:
-		//   CPU:     integer + float + multi-thread bonus
-		//   Memory:  read + write + copy throughput, latency penalty
-		//   Cache:   L1 + L2 + L3 throughput
-		//   Kernel:  geometric mean of primitives
-		//   Messaging: flatten + looper
-		// Each sub-score normalized to ~100 for a mid-range system
-
-		float cpuScore = fSysResults.cpuIntegerMOPS * 1.0f
-			+ fSysResults.cpuFloatMFLOPS * 2.0f
-			+ fSysResults.cpuMultiScore * 10.0f;
-
-		float memScore = (fSysResults.ramSeqReadMBs
-			+ fSysResults.ramSeqWriteMBs
-			+ fSysResults.ramCopyMBs) / 50.0f;
-		if (fSysResults.ramLatencyNs > 0.0f)
-			memScore += 500.0f / fSysResults.ramLatencyNs;
-
-		float cacheScore = (fSysResults.cacheL1MBs
-			+ fSysResults.cacheL2MBs
-			+ fSysResults.cacheL3MBs) / 100.0f;
-
-		float kernelScore = (fSysResults.semCreateDeleteKOPS
-			+ fSysResults.semAcquireReleaseKOPS
-			+ fSysResults.threadSpawnKOPS * 10.0f
-			+ fSysResults.portSendRecvKOPS
-			+ fSysResults.areaCreateDeleteKOPS
-			+ fSysResults.atomicOpsKOPS / 100.0f) / 10.0f;
-		if (fSysResults.syscallOverheadNs > 0.0f)
-			kernelScore += 100.0f / fSysResults.syscallOverheadNs;
-
-		float msgScore = (fSysResults.bmsgFlattenKOPS
-			+ fSysResults.blooperMsgKOPS) / 5.0f;
-
-		float totalScore = cpuScore + memScore + cacheScore
-			+ kernelScore + msgScore;
-
-		fprintf(f, "\n## Overall Score\n\n");
-		fprintf(f, "| Sub-score | Points |\n");
-		fprintf(f, "|-----------|-------:|\n");
-		fprintf(f, "| CPU | %.0f |\n", cpuScore);
-		fprintf(f, "| Memory | %.0f |\n", memScore);
-		fprintf(f, "| Cache | %.0f |\n", cacheScore);
-		fprintf(f, "| Kernel | %.0f |\n", kernelScore);
-		fprintf(f, "| Messaging | %.0f |\n", msgScore);
-		fprintf(f, "| **TOTAL** | **%.0f** |\n", totalScore);
-		fprintf(f, "\n");
+		ScoreResult score = ComputeScore(fSysResults);
+		if (score.valid) {
+			fprintf(f, "\n## Score (baseline = 1000)\n\n");
+			fprintf(f, "_Geometric mean of per-test ratios vs reference "
+				"system. 1000 = identical to baseline._\n\n");
+			fprintf(f, "| Category | Score |\n");
+			fprintf(f, "|----------|------:|\n");
+			for (int32 i = 0; i < kNumScoreCategories; i++) {
+				fprintf(f, "| %s | %.0f |\n",
+					kScoreCategoryNames[i],
+					score.categoryScore[i]);
+			}
+			fprintf(f, "| **OVERALL** | **%.0f** |\n",
+				score.overall);
+			fprintf(f, "\n");
+		}
 	}
 
 	fprintf(f, "---\n*Generated by HaikuBench — Machine `%s`*\n",
@@ -895,6 +920,25 @@ MainWindow::_ExportResults()
 				? BString().SetToFormat("\"%s\"",
 					fVkResult.String()).String()
 				: "null");
+		fprintf(j, "  },\n");
+
+		// Score
+		fprintf(j, "  \"score\": {\n");
+		if (fSysResults.valid) {
+			ScoreResult score = ComputeScore(fSysResults);
+			if (score.valid) {
+				static const char* jsonCatKeys[] = {
+					"cpu", "memory", "cache", "kernel", "messaging"
+				};
+				fprintf(j, "    \"method\": \"geometric_mean_vs_baseline\",\n");
+				fprintf(j, "    \"baseline\": 1000,\n");
+				for (int32 i = 0; i < kNumScoreCategories; i++) {
+					fprintf(j, "    \"%s\": %.1f,\n",
+						jsonCatKeys[i], score.categoryScore[i]);
+				}
+				fprintf(j, "    \"overall\": %.1f\n", score.overall);
+			}
+		}
 		fprintf(j, "  }\n");
 
 		fprintf(j, "}\n");
