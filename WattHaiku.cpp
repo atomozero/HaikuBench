@@ -4,8 +4,11 @@
  */
 
 
+#include <string.h>
+
 #include <Application.h>
 
+#include "GpuBenchWindow.h"
 #include "MainWindow.h"
 
 
@@ -33,8 +36,13 @@ HaikuBenchApp::ReadyToRun()
 
 
 int
-main()
+main(int argc, char** argv)
 {
+	// Child mode: software comparison pass for the GPU benchmark
+	// (spawned by GpuBenchWindow with HGL_SOFTWARE=1).
+	if (argc >= 3 && strcmp(argv[1], "--gpu-sw-pass") == 0)
+		return RunGpuSoftwarePass(argv[2]);
+
 	HaikuBenchApp app;
 	app.Run();
 

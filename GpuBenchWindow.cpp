@@ -6,6 +6,7 @@
 
 #include "GpuBenchWindow.h"
 
+#include <Application.h>
 #include <Box.h>
 #include <Button.h>
 #include <GL/gl.h>
@@ -13,6 +14,8 @@
 #include <GL/glu.h>
 #include <GL/glut.h>
 #include <LayoutBuilder.h>
+#include <Path.h>
+#include <Roster.h>
 #include <SeparatorView.h>
 
 #include "TempOverlay.h"
@@ -21,6 +24,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+#include <OS.h>
 
 
 static const rgb_color kDarkBg = {13, 17, 23, 255};
@@ -29,6 +35,10 @@ static const rgb_color kWhite = {230, 237, 243, 255};
 static const rgb_color kLabelWhite = {200, 210, 225, 255};
 static const rgb_color kGray = {170, 180, 195, 255};
 static const rgb_color kYellow = {230, 200, 50, 255};
+static const rgb_color kOrange = {235, 140, 40, 255};
+
+static const char* kSwPassExe = "/tmp/HaikuBench_swpass";
+static const char* kSwPassOut = "/tmp/HaikuBench_swpass_result.txt";
 
 static const float kTestDurationSec = 3.0f;
 
@@ -184,11 +194,32 @@ GpuBenchGLView::Draw(BRect /*updateRect*/)
 }
 
 
+bool
+GpuBenchGLView::IsHardware() const
+{
+	// Software rasterizers identify themselves in GL_RENDERER; anything
+	// else (e.g. "Mesa Intel(R) HD Graphics (ILK)") is a hardware driver.
+	if (fRendererName.IFindFirst("llvmpipe") >= 0
+		|| fRendererName.IFindFirst("softpipe") >= 0
+		|| fRendererName.IFindFirst("swrast") >= 0
+		|| fRendererName.IFindFirst("software") >= 0)
+		return false;
+
+	return fRendererName.Length() > 0;
+}
+
+
 void
 GpuBenchGLView::RunBenchmark()
 {
 	fRunning = true;
 	memset(&fResults, 0, sizeof(fResults));
+
+	// CPU load across the whole run: on a hardware driver the CPU mostly
+	// feeds the GPU (low %), a software rasterizer burns every core.
+	team_usage_info usageStart;
+	get_team_usage_info(B_CURRENT_TEAM, B_TEAM_USAGE_SELF, &usageStart);
+	bigtime_t wallStart = system_time();
 
 	LockGL();
 
@@ -218,6 +249,16 @@ GpuBenchGLView::RunBenchmark()
 	for (int32 i = 0; i < kNumGpuTests; i++)
 		product *= fResults.fps[i] > 0.0f ? fResults.fps[i] : 1.0f;
 	fResults.score = powf(product, 1.0f / (float)kNumGpuTests);
+
+	team_usage_info usageEnd;
+	get_team_usage_info(B_CURRENT_TEAM, B_TEAM_USAGE_SELF, &usageEnd);
+	bigtime_t wall = system_time() - wallStart;
+	if (wall > 0) {
+		bigtime_t cpu = (usageEnd.user_time + usageEnd.kernel_time)
+			- (usageStart.user_time + usageStart.kernel_time);
+		fResults.cpuLoad = 100.0f * (float)cpu / (float)wall;
+	}
+
 	fResults.valid = true;
 
 	UnlockGL();
@@ -302,6 +343,8 @@ GpuBenchGLView::_DetectGpu()
 	const char* vendor = (const char*)glGetString(GL_VENDOR);
 	const char* renderer = (const char*)glGetString(GL_RENDERER);
 	const char* version = (const char*)glGetString(GL_VERSION);
+
+	fRendererName = renderer ? renderer : "";
 
 	fGpuInfo.SetToFormat("%s | %s | GL %s",
 		vendor ? vendor : "Unknown",
@@ -670,11 +713,19 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 		B_TITLED_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS),
 	fTarget(target),
+	fComparing(false),
 	fBenchThread(-1),
 	fRedrawRunner(NULL)
 {
+	memset(&fSwResults, 0, sizeof(fSwResults));
+
 	BView* topView = new BView("top", B_WILL_DRAW);
 	topView->SetViewColor(kDarkBg);
+
+	// Acceleration badge — the headline verdict, filled in as soon as the
+	// GL context is up
+	fAccelBadge = _MakeLabel("accelBadge", "Detecting renderer...",
+		kGray, 13.0f, true);
 
 	// GL view — visible preview of the running benchmark
 	BRect glFrame(0, 0, 319, 239);
@@ -725,11 +776,19 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 	BView* resInner = new BView("gpuResInner", B_WILL_DRAW);
 	resInner->SetViewColor(kDarkBg);
 
-	BStringView* header = _MakeLabel("gpuHdr", "OpenGL Tests",
+	BStringView* header = _MakeLabel("gpuHdr",
+		"  OpenGL Tests                    GPU (default)",
 		{80, 200, 220, 255}, 11.0f, true);
 
 	BFont monoFont(be_fixed_font);
 	monoFont.SetSize(11.0f);
+	fHeaderLabel = header;
+	{
+		BFont headerMono(be_fixed_font);
+		headerMono.SetSize(11.0f);
+		headerMono.SetFace(B_BOLD_FACE);
+		header->SetFont(&headerMono);
+	}
 
 	for (int32 i = 0; i < kNumGpuTests; i++) {
 		BString name;
@@ -750,6 +809,9 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 		fScoreLabel->SetFont(&scoreMono);
 	}
 
+	fCpuLoadLabel = _MakeLabel("cpuload", "", kGray, 11.0f);
+	fCpuLoadLabel->SetFont(&monoFont);
+
 	BLayoutBuilder::Group<>(resInner, B_VERTICAL, 1)
 		.SetInsets(8, 8, 8, 8)
 		.Add(header)
@@ -761,6 +823,7 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 		.Add(fTestLabels[5])
 		.Add(new BSeparatorView(B_HORIZONTAL))
 		.Add(fScoreLabel)
+		.Add(fCpuLoadLabel)
 	.End();
 	resBox->AddChild(resInner);
 
@@ -777,6 +840,7 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 
 	BLayoutBuilder::Group<>(topView, B_VERTICAL, 6)
 		.SetInsets(12, 12, 12, 12)
+		.Add(fAccelBadge)
 		.Add(sysBox)
 		.Add(fGLView)
 		.Add(resBox)
@@ -842,7 +906,7 @@ GpuBenchWindow::MessageReceived(BMessage* message)
 bool
 GpuBenchWindow::QuitRequested()
 {
-	if (fGLView->IsRunning())
+	if (fGLView->IsRunning() || fComparing)
 		return false;
 
 	// Send results back if valid
@@ -853,6 +917,14 @@ GpuBenchWindow::QuitRequested()
 			result.AddFloat("gpu_fps", results.fps[i]);
 		result.AddFloat("gpu_score", results.score);
 		result.AddString("gpu_info", fGLView->GpuInfo());
+		result.AddBool("gpu_hardware", fGLView->IsHardware());
+		result.AddFloat("gpu_cpu_load", results.cpuLoad);
+		if (fSwResults.valid && fSwResults.score > 0.0f) {
+			result.AddFloat("gpu_sw_score", fSwResults.score);
+			result.AddFloat("gpu_speedup",
+				results.score / fSwResults.score);
+			result.AddString("gpu_sw_renderer", fSwRenderer);
+		}
 		fTarget.SendMessage(&result);
 	}
 
@@ -912,10 +984,44 @@ GpuBenchWindow::_UpdateLabels()
 		fMesaVersionLabel->SetText(mesaText.String());
 	}
 
-	// Update test labels — aligned format matching system bench style
+	// Acceleration badge — the headline verdict
+	if (renderer.Length() > 0) {
+		if (fGLView->IsHardware()) {
+			BString badge;
+			badge.SetToFormat("HARDWARE ACCELERATION ACTIVE — %s",
+				renderer.String());
+			fAccelBadge->SetText(badge.String());
+			fAccelBadge->SetHighColor(kGreen);
+		} else {
+			BString badge;
+			badge.SetToFormat("SOFTWARE RENDERING (CPU) — %s",
+				renderer.String());
+			fAccelBadge->SetText(badge.String());
+			fAccelBadge->SetHighColor(kOrange);
+		}
+		fAccelBadge->Invalidate();
+	}
+
+	// Update test labels — aligned format matching system bench style.
+	// When the software comparison pass has run, show three columns:
+	// hardware FPS, software FPS and the speedup factor.
+	bool haveSw = fSwResults.valid;
+
+	if (haveSw) {
+		fHeaderLabel->SetText(
+			"  OpenGL Tests               GPU        CPU    Speedup");
+	}
+
 	for (int32 i = 0; i < kNumGpuTests; i++) {
 		BString text;
-		if (i < currentTest || (currentTest == -1 && results.valid)) {
+		if (haveSw && results.valid) {
+			float speedup = fSwResults.fps[i] > 0.0f
+				? results.fps[i] / fSwResults.fps[i] : 0.0f;
+			text.SetToFormat("  %-22s %8.1f  %8.1f  %7.1fx",
+				kTestNames[i], results.fps[i], fSwResults.fps[i],
+				speedup);
+			fTestLabels[i]->SetHighColor(kWhite);
+		} else if (i < currentTest || (currentTest == -1 && results.valid)) {
 			text.SetToFormat("  %-22s  %8.1f FPS",
 				kTestNames[i], results.fps[i]);
 			fTestLabels[i]->SetHighColor(kWhite);
@@ -934,10 +1040,30 @@ GpuBenchWindow::_UpdateLabels()
 	// Update score
 	if (results.valid) {
 		BString scoreText;
-		scoreText.SetToFormat(
-			"  Overall Score       %8.1f FPS",
-			results.score);
+		if (haveSw && fSwResults.score > 0.0f) {
+			scoreText.SetToFormat(
+				"  Overall Score        %8.1f  %8.1f  %7.1fx",
+				results.score, fSwResults.score,
+				results.score / fSwResults.score);
+		} else {
+			scoreText.SetToFormat(
+				"  Overall Score       %8.1f FPS",
+				results.score);
+		}
 		fScoreLabel->SetText(scoreText.String());
+
+		// CPU load while rendering: low on a hardware driver (the GPU is
+		// doing the work), all cores on a software rasterizer.
+		BString cpuText;
+		if (haveSw) {
+			cpuText.SetToFormat(
+				"  CPU load during render: GPU pass %.0f%%, CPU pass %.0f%%",
+				results.cpuLoad, fSwResults.cpuLoad);
+		} else if (results.cpuLoad > 0.0f) {
+			cpuText.SetToFormat(
+				"  CPU load during render: %.0f%%", results.cpuLoad);
+		}
+		fCpuLoadLabel->SetText(cpuText.String());
 	}
 
 	Unlock();
@@ -974,14 +1100,171 @@ GpuBenchWindow::_BenchThread(void* data)
 		wait_for_thread(renderThread, &result);
 	}
 
+	// On a hardware renderer, run the same tests on the software
+	// rasterizer for an apples-to-apples comparison — the speedup IS the
+	// proof that the GPU is doing the rendering.
+	bool compared = false;
+	if (window->fGLView->IsHardware())
+		compared = window->_RunSoftwareComparison();
+
 	// Final update
 	if (window->Lock()) {
 		window->_UpdateLabels();
-		window->fStatusLabel->SetText("GPU benchmark complete!");
+		if (compared && window->fSwResults.score > 0.0f) {
+			BString status;
+			status.SetToFormat(
+				"Complete — GPU rendering is %.1fx faster than CPU (%s)",
+				window->fGLView->Results().score / window->fSwResults.score,
+				window->fSwRenderer.String());
+			window->fStatusLabel->SetText(status.String());
+		} else
+			window->fStatusLabel->SetText("GPU benchmark complete!");
 		window->fStatusLabel->SetHighColor(kGreen);
 		window->fBenchThread = -1;
 		window->Unlock();
 	}
+
+	return 0;
+}
+
+
+// Run the six tests again in a child process forced onto the software
+// renderer (HGL_SOFTWARE=1). The app is B_SINGLE_LAUNCH, which is enforced
+// per executable file — so the child runs from a temporary copy of the
+// binary. Returns true when software results were collected.
+bool
+GpuBenchWindow::_RunSoftwareComparison()
+{
+	fComparing = true;
+
+	if (Lock()) {
+		fStatusLabel->SetText("Comparing: same tests on the software "
+			"renderer (this takes ~20s)...");
+		fStatusLabel->SetHighColor(kYellow);
+		Unlock();
+	}
+
+	app_info info;
+	if (be_app->GetAppInfo(&info) != B_OK) {
+		fComparing = false;
+		return false;
+	}
+	BPath appPath(&info.ref);
+
+	unlink(kSwPassExe);
+	unlink(kSwPassOut);
+
+	BString command;
+	command.SetToFormat(
+		"cp \"%s\" %s && chmod +x %s && "
+		"HGL_SOFTWARE=1 %s --gpu-sw-pass %s",
+		appPath.Path(), kSwPassExe, kSwPassExe, kSwPassExe, kSwPassOut);
+	int rc = system(command.String());
+
+	bool ok = false;
+	FILE* file = (rc == 0) ? fopen(kSwPassOut, "r") : NULL;
+	if (file != NULL) {
+		char line[256];
+		if (fgets(line, sizeof(line), file) != NULL) {
+			fSwRenderer = line;
+			fSwRenderer.RemoveAll("\n");
+		}
+		float cpuLoad = 0.0f, score = 0.0f;
+		float fps[kNumGpuTests] = {};
+		int fields = 0;
+		if (fscanf(file, "%f", &cpuLoad) == 1)
+			fields++;
+		for (int32 i = 0; i < kNumGpuTests; i++) {
+			if (fscanf(file, "%f", &fps[i]) == 1)
+				fields++;
+		}
+		if (fscanf(file, "%f", &score) == 1)
+			fields++;
+		fclose(file);
+
+		if (fields == kNumGpuTests + 2 && score > 0.0f) {
+			for (int32 i = 0; i < kNumGpuTests; i++)
+				fSwResults.fps[i] = fps[i];
+			fSwResults.cpuLoad = cpuLoad;
+			fSwResults.score = score;
+			fSwResults.valid = true;
+			ok = true;
+		}
+	}
+
+	unlink(kSwPassExe);
+	unlink(kSwPassOut);
+
+	fComparing = false;
+	return ok;
+}
+
+
+// #pragma mark - software comparison pass (child process)
+
+
+static GpuBenchGLView* sSwPassView = NULL;
+static const char* sSwPassOutPath = NULL;
+
+
+class GpuSwPassApp : public BApplication {
+public:
+	GpuSwPassApp()
+		:
+		// Distinct signature: must not be routed to the running
+		// B_SINGLE_LAUNCH HaikuBench instance.
+		BApplication("application/x-vnd.HaikuBench.SwPass")
+	{
+	}
+
+	virtual void ReadyToRun()
+	{
+		BWindow* window = new BWindow(BRect(60, 60, 380, 300),
+			"HaikuBench — software comparison pass", B_TITLED_WINDOW,
+			B_NOT_RESIZABLE | B_NOT_ZOOMABLE | B_NOT_CLOSABLE);
+
+		sSwPassView = new GpuBenchGLView(BRect(0, 0, 319, 239));
+		window->AddChild(sSwPassView);
+		window->Show();
+
+		thread_id thread = spawn_thread(_PassThread, "gpu_sw_pass",
+			B_NORMAL_PRIORITY, NULL);
+		resume_thread(thread);
+	}
+
+private:
+	static int32 _PassThread(void* /*unused*/)
+	{
+		// AttachedToWindow (GL context creation) runs on Show(); give the
+		// window thread time to finish it.
+		snooze(800000);
+
+		sSwPassView->RunBenchmark();
+
+		GpuBenchResults results = sSwPassView->Results();
+		FILE* file = fopen(sSwPassOutPath, "w");
+		if (file != NULL) {
+			fprintf(file, "%s\n", sSwPassView->RendererName().String());
+			fprintf(file, "%.1f\n", results.cpuLoad);
+			for (int32 i = 0; i < kNumGpuTests; i++)
+				fprintf(file, "%.2f\n", results.fps[i]);
+			fprintf(file, "%.2f\n", results.score);
+			fclose(file);
+		}
+
+		be_app->PostMessage(B_QUIT_REQUESTED);
+		return 0;
+	}
+};
+
+
+int
+RunGpuSoftwarePass(const char* outputPath)
+{
+	sSwPassOutPath = outputPath;
+
+	GpuSwPassApp app;
+	app.Run();
 
 	return 0;
 }

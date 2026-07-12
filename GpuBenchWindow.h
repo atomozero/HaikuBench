@@ -29,6 +29,7 @@ static const int32 kNumGpuTests = 6;
 struct GpuBenchResults {
 	float	fps[kNumGpuTests];
 	float	score;
+	float	cpuLoad;	// team CPU time / wall time * 100, >100 = multicore
 	bool	valid;
 };
 
@@ -45,6 +46,8 @@ public:
 			void				RunBenchmark();
 			GpuBenchResults		Results() const { return fResults; }
 			BString				GpuInfo() const { return fGpuInfo; }
+			BString				RendererName() const { return fRendererName; }
+			bool				IsHardware() const;
 			int32				CurrentTest() const { return fCurrentTest; }
 			bool				IsRunning() const { return fRunning; }
 
@@ -62,6 +65,7 @@ private:
 
 			GpuBenchResults		fResults;
 			BString				fGpuInfo;
+			BString				fRendererName;
 			int32				fCurrentTest;
 			std::atomic<bool>	fRunning;
 			float				fCachedWidth;
@@ -81,12 +85,20 @@ public:
 
 private:
 			void				_UpdateLabels();
+			bool				_RunSoftwareComparison();
 
 	static	int32				_BenchThread(void* data);
 
 			GpuBenchGLView*		fGLView;
 			BMessenger			fTarget;
 
+			GpuBenchResults		fSwResults;
+			BString				fSwRenderer;
+			std::atomic<bool>	fComparing;
+
+			BStringView*		fAccelBadge;
+			BStringView*		fCpuLoadLabel;
+			BStringView*		fHeaderLabel;
 			BStringView*		fGpuLabel;
 			BStringView*		fRendererLabel;
 			BStringView*		fGlVersionLabel;
@@ -97,6 +109,13 @@ private:
 			thread_id			fBenchThread;
 			BMessageRunner*		fRedrawRunner;
 };
+
+
+// Child-process entry point for the software comparison pass: runs the
+// same six tests on the software renderer (launched with HGL_SOFTWARE=1
+// from a temporary copy of the binary — the app is B_SINGLE_LAUNCH) and
+// writes the results to outputPath.
+int RunGpuSoftwarePass(const char* outputPath);
 
 
 #endif // GPU_BENCH_WINDOW_H

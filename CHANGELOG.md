@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.0 — 2026-07-12
+
+### GPU Benchmark: hardware acceleration proof
+
+- Acceleration badge: classifies the active OpenGL renderer as hardware
+  or software from `GL_RENDERER` (llvmpipe/softpipe/swrast = software)
+  and displays the verdict prominently
+- Automatic hardware-vs-software comparison: on a hardware renderer the
+  same six tests are re-run in a child process on the software renderer
+  (`HGL_SOFTWARE=1`, executed from a temporary copy of the binary since
+  the app is B_SINGLE_LAUNCH) and shown as GPU / CPU / speedup columns
+- CPU load measured during each pass via `get_team_usage_info()`:
+  near-idle CPU on a GPU pass vs all cores saturated on a software pass
+- Comparison summary in the main window results and exports
+  (`gpu_speedup`, `gpu_sw_score`, `gpu_cpu_load`, `gpu_hardware`)
+
 ## 1.1.0 — 2026-05-18
 
 ### 2D Hardware Acceleration Detection

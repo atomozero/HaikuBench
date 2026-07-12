@@ -78,6 +78,16 @@ Reports device name, chipset, VRAM and individual hook availability
 
 Includes a live rotating teapot preview during idle.
 
+**Hardware acceleration proof.** The window shows a badge stating
+whether the active renderer is a hardware GPU driver or a software
+rasterizer (from `GL_RENDERER`). On a hardware driver the suite then
+re-runs the exact same six tests in a child process forced onto the
+software renderer (`HGL_SOFTWARE=1`) and reports three columns — GPU
+FPS, CPU FPS and the speedup factor — plus the CPU load measured
+during each pass: a GPU pass keeps the CPU nearly idle while a
+software pass saturates every core. Together these numbers demonstrate
+unambiguously that rendering is happening on the GPU.
+
 ### Vulkan Benchmark — 4 tests
 
 | Test | Description |

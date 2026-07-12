@@ -38,8 +38,8 @@ clean:
 	rm -f $(OBJS) $(NAME)
 
 # Dependencies
-WattHaiku.o: MainWindow.h
-MainWindow.o: MainWindow.h SysBenchmark.h CpuDatabase.h TeapotWindow.h Bench2DWindow.h GpuBenchWindow.h VulkanBenchWindow.h BenchStats.h
+WattHaiku.o: MainWindow.h GpuBenchWindow.h
+MainWindow.o: MainWindow.h SysBenchmark.h CpuDatabase.h TeapotWindow.h Bench2DWindow.h GpuBenchWindow.h VulkanBenchWindow.h BenchStats.h Version.h
 SysBenchmark.o: SysBenchmark.h CpuDatabase.h BenchStats.h AdaptiveRunner.h BenchWarmup.h
 BenchStats.o: BenchStats.h
 AdaptiveRunner.o: AdaptiveRunner.h BenchStats.h
