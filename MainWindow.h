@@ -56,8 +56,8 @@ private:
 			BStringView*		fSysTestLabels[SysBenchmark::kNumTests];
 			BStringView*		fSysStatusLabel;
 
-			// Score
-			BStringView*		fScoreLabels[6]; // 5 categories + overall
+			// Score (8 categories + overall)
+			BStringView*		fScoreLabels[9];
 
 			// External benchmark results
 			BStringView*		fTeapotResultLabel;
@@ -71,8 +71,12 @@ private:
 			BString				fBench2DResult;
 			BString				fGpuResult;
 			BString				fVkResult;
+			float				fBench2DFPS;	// FillRect ops/sec
+			float				fGpuScore;		// GPU overall FPS
+			float				fVkScore;		// Vulkan overall pts
 			BMessageRunner*		fTempRunner;
 			thread_id			fSysBenchThread;
+			int32				fRunAllState;	// -1=off, 0-3=step
 			volatile int32		fCurrentSysTest;
 };
 

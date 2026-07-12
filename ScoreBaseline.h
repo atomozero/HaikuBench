@@ -82,10 +82,6 @@ enum {
 	kNumScoreCategories
 };
 
-static const char* kScoreCategoryNames[kNumScoreCategories] = {
-	"CPU", "Memory", "Cache", "Kernel", "Messaging"
-};
-
 // First test index for each category.
 static const int32 kCategoryStart[kNumScoreCategories] = {
 	0, 3, 7, 10, 18
@@ -97,15 +93,38 @@ static const int32 kCategoryCount[kNumScoreCategories] = {
 };
 
 
+// Baselines for graphics benchmarks (optional categories).
+// Set to 0 to skip the category in scoring.
+static const float kBaseline2DFillRate	= 18555.0f;	// FillRect ops/sec
+static const float kBaselineGpuScore	= 24.0f;	// GPU overall FPS
+static const float kBaselineVkScore		= 50.0f;	// Vulkan overall pts
+
+
+enum {
+	kScoreGraphics2D = kNumScoreCategories,
+	kScoreGPU,
+	kScoreVulkan,
+	kNumScoreCategoriesAll
+};
+
+static const char* kScoreCategoryNamesAll[kNumScoreCategoriesAll] = {
+	"CPU", "Memory", "Cache", "Kernel", "Messaging",
+	"2D Graphics", "GPU (OpenGL)", "Vulkan"
+};
+
+
 struct ScoreResult {
-	float	categoryScore[kNumScoreCategories];
+	float	categoryScore[kNumScoreCategoriesAll];
 	float	overall;
+	int32	numCategories;
 	bool	valid;
 };
 
 
 static inline ScoreResult
-ComputeScore(const SysBenchResults& results)
+ComputeScore(const SysBenchResults& results,
+	float bench2dFPS = 0.0f, float gpuScore = 0.0f,
+	float vkScore = 0.0f)
 {
 	ScoreResult score;
 	score.valid = false;
@@ -148,6 +167,30 @@ ComputeScore(const SysBenchResults& results)
 			score.categoryScore[cat] = 0.0f;
 		}
 	}
+
+	// Optional graphics categories
+	struct {
+		float result;
+		float baseline;
+		int32 cat;
+	} gfxTests[] = {
+		{ bench2dFPS, kBaseline2DFillRate, kScoreGraphics2D },
+		{ gpuScore,   kBaselineGpuScore,   kScoreGPU },
+		{ vkScore,    kBaselineVkScore,    kScoreVulkan }
+	};
+
+	for (int32 g = 0; g < 3; g++) {
+		if (gfxTests[g].result > 0.0f && gfxTests[g].baseline > 0.0f) {
+			float ratio = gfxTests[g].result / gfxTests[g].baseline;
+			score.categoryScore[gfxTests[g].cat] = ratio * 1000.0f;
+			categoryProduct *= score.categoryScore[gfxTests[g].cat];
+			validCategories++;
+		} else {
+			score.categoryScore[gfxTests[g].cat] = 0.0f;
+		}
+	}
+
+	score.numCategories = validCategories;
 
 	if (validCategories > 0) {
 		score.overall =

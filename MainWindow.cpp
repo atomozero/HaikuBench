@@ -70,8 +70,12 @@ MainWindow::MainWindow()
 			" \xE2\x80\x94 System Benchmark Suite",
 		B_TITLED_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE),
+	fBench2DFPS(0.0f),
+	fGpuScore(0.0f),
+	fVkScore(0.0f),
 	fTempRunner(NULL),
 	fSysBenchThread(-1),
+	fRunAllState(-1),
 	fCurrentSysTest(-1)
 {
 	memset(&fSysResults, 0, sizeof(fSysResults));
@@ -119,9 +123,19 @@ MainWindow::MessageReceived(BMessage* message)
 		case kMsgSysBenchDone:
 		{
 			_UpdateSysResults();
-			fSysStatusLabel->SetText("System benchmark complete!");
-			fSysStatusLabel->SetHighColor(kGreen);
 			fSysBenchThread = -1;
+
+			if (fRunAllState == 0) {
+				fSysStatusLabel->SetText(
+					"Run All: system done, starting 2D...");
+				fSysStatusLabel->SetHighColor(kYellow);
+				fRunAllState = 1;
+				PostMessage(kMsgRun2DBenchmark);
+			} else {
+				fSysStatusLabel->SetText(
+					"System benchmark complete!");
+				fSysStatusLabel->SetHighColor(kGreen);
+			}
 			break;
 		}
 
@@ -176,6 +190,16 @@ MainWindow::MessageReceived(BMessage* message)
 			fBench2DResult.SetToFormat(
 				"2D Bench: %.0f fill/s | nebula %.1f/s | extreme %.2f/s",
 				fillRPS, nebulaOPS, everythingOPS);
+			fBench2DFPS = fillRPS;
+			if (fSysResults.valid)
+				_UpdateSysResults();
+
+			if (fRunAllState == 1) {
+				fSysStatusLabel->SetText(
+					"Run All: 2D done, starting GPU...");
+				fRunAllState = 2;
+				PostMessage(kMsgRunGpuBenchmark);
+			}
 			break;
 		}
 
@@ -202,6 +226,26 @@ MainWindow::MessageReceived(BMessage* message)
 			fGpuResult.SetToFormat(
 				"GPU Bench: %.1f FPS (%s)",
 				gpuScore, gpuInfo.String());
+
+			// Hardware-vs-software comparison, when the GPU window ran it
+			float speedup = 0.0f;
+			if (message->FindFloat("gpu_speedup", &speedup) == B_OK
+				&& speedup > 0.0f) {
+				BString extra;
+				extra.SetToFormat(" — hardware %.1fx faster than software",
+					speedup);
+				fGpuResult << extra;
+			}
+			fGpuScore = gpuScore;
+			if (fSysResults.valid)
+				_UpdateSysResults();
+
+			if (fRunAllState == 2) {
+				fSysStatusLabel->SetText(
+					"Run All: GPU done, starting Vulkan...");
+				fRunAllState = 3;
+				PostMessage(kMsgRunVkBenchmark);
+			}
 			break;
 		}
 
@@ -230,6 +274,28 @@ MainWindow::MessageReceived(BMessage* message)
 			fVkResult.SetToFormat(
 				"Vulkan: %.1f pts (%s | %s)",
 				vkScore, vkDevice.String(), vkDriver.String());
+			fVkScore = vkScore;
+			if (fSysResults.valid)
+				_UpdateSysResults();
+
+			if (fRunAllState == 3) {
+				fRunAllState = -1;
+				fSysStatusLabel->SetText("Run All complete!");
+				fSysStatusLabel->SetHighColor(kGreen);
+			}
+			break;
+		}
+
+		case kMsgRunAllBench:
+		{
+			if (fSysBenchThread >= 0 || fRunAllState >= 0)
+				break;
+
+			fRunAllState = 0;
+			fSysStatusLabel->SetText(
+				"Run All: starting system benchmark...");
+			fSysStatusLabel->SetHighColor(kYellow);
+			PostMessage(kMsgRunSysBench);
 			break;
 		}
 
@@ -272,6 +338,8 @@ MainWindow::_BuildLayout()
 		"Teapot 3D", new BMessage(kMsgRunBenchmark));
 	BButton* vulkanButton = new BButton("vulkanBtn",
 		"Vulkan", new BMessage(kMsgRunVkBenchmark));
+	BButton* runAllButton = new BButton("runAllBtn",
+		"Run All", new BMessage(kMsgRunAllBench));
 	BButton* exportButton = new BButton("exportBtn",
 		"Export .md", new BMessage(kMsgExportResults));
 
@@ -282,6 +350,7 @@ MainWindow::_BuildLayout()
 		.AddGlue()
 		.Add(new BSeparatorView(B_HORIZONTAL))
 		.AddGroup(B_HORIZONTAL, 6)
+			.Add(runAllButton)
 			.Add(sysButton)
 			.Add(bench2DButton)
 			.Add(gpuButton)
@@ -427,26 +496,25 @@ MainWindow::_CreateResultsPanel()
 	BStringView* scoreHeader = _MakeLabel("scoreH",
 		"Score (baseline = 1000)", kGreen, 11.0f, true);
 	{
-		const char* catLabels[] = {
-			"  CPU", "  Memory", "  Cache", "  Kernel", "  Messaging"
-		};
 		BFont scoreMono(be_fixed_font);
 		scoreMono.SetSize(11.0f);
-		for (int32 i = 0; i < 5; i++) {
+		for (int32 i = 0; i < kNumScoreCategoriesAll; i++) {
 			BString name;
 			name.SetToFormat("score%" B_PRId32, i);
 			BString text;
-			text.SetToFormat("  %-22s       --", catLabels[i]);
+			text.SetToFormat("  %-22s       --",
+				kScoreCategoryNamesAll[i]);
 			fScoreLabels[i] = _MakeLabel(name.String(),
 				text.String(), kGray, 11.0f);
 			fScoreLabels[i]->SetFont(&scoreMono);
 		}
-		fScoreLabels[5] = _MakeLabel("scoreTotal",
+		// Overall label (index = kNumScoreCategoriesAll = 8)
+		fScoreLabels[kNumScoreCategoriesAll] = _MakeLabel("scoreTotal",
 			"  OVERALL                    --", kGreen, 11.0f, true);
 		BFont scoreBold(be_fixed_font);
 		scoreBold.SetSize(11.0f);
 		scoreBold.SetFace(B_BOLD_FACE);
-		fScoreLabels[5]->SetFont(&scoreBold);
+		fScoreLabels[kNumScoreCategoriesAll]->SetFont(&scoreBold);
 	}
 
 	BLayoutBuilder::Group<>(inner, B_HORIZONTAL, 10)
@@ -500,6 +568,9 @@ MainWindow::_CreateResultsPanel()
 			.Add(fScoreLabels[3])
 			.Add(fScoreLabels[4])
 			.Add(fScoreLabels[5])
+			.Add(fScoreLabels[6])
+			.Add(fScoreLabels[7])
+			.Add(fScoreLabels[kNumScoreCategoriesAll])
 			.Add(new BSeparatorView(B_HORIZONTAL))
 			.Add(fSysStatusLabel)
 			.AddGlue()
@@ -625,24 +696,35 @@ MainWindow::_UpdateSysResults()
 	}
 
 	// Compute and display SPEC-style score
-	ScoreResult score = ComputeScore(fSysResults);
+	ScoreResult score = ComputeScore(fSysResults,
+		fBench2DFPS, fGpuScore, fVkScore);
 	if (score.valid) {
 		static const rgb_color catColors[] = {
 			kCyan, kOrange, kYellow, kPurple,
-			{220, 120, 180, 255}
+			{220, 120, 180, 255},	// Messaging
+			kGreen,					// 2D Graphics
+			kGreen,					// GPU
+			kGreen					// Vulkan
 		};
-		for (int32 i = 0; i < kNumScoreCategories; i++) {
+		for (int32 i = 0; i < kNumScoreCategoriesAll; i++) {
 			BString text;
-			text.SetToFormat("  %-22s  %7.0f",
-				kScoreCategoryNames[i], score.categoryScore[i]);
+			if (score.categoryScore[i] > 0.0f) {
+				text.SetToFormat("  %-22s  %7.0f",
+					kScoreCategoryNamesAll[i],
+					score.categoryScore[i]);
+				fScoreLabels[i]->SetHighColor(catColors[i]);
+			} else {
+				text.SetToFormat("  %-22s       --",
+					kScoreCategoryNamesAll[i]);
+				fScoreLabels[i]->SetHighColor(kGray);
+			}
 			fScoreLabels[i]->SetText(text.String());
-			fScoreLabels[i]->SetHighColor(catColors[i]);
 		}
 		BString text;
 		text.SetToFormat("  OVERALL               %7.0f",
 			score.overall);
-		fScoreLabels[5]->SetText(text.String());
-		fScoreLabels[5]->SetHighColor(kGreen);
+		fScoreLabels[kNumScoreCategoriesAll]->SetText(text.String());
+		fScoreLabels[kNumScoreCategoriesAll]->SetHighColor(kGreen);
 	}
 }
 
@@ -813,17 +895,22 @@ MainWindow::_ExportResults()
 
 	// SPEC-style score (geometric mean of ratios vs baseline = 1000)
 	if (fSysResults.valid) {
-		ScoreResult score = ComputeScore(fSysResults);
+		ScoreResult score = ComputeScore(fSysResults,
+			fBench2DFPS, fGpuScore, fVkScore);
 		if (score.valid) {
 			fprintf(f, "\n## Score (baseline = 1000)\n\n");
 			fprintf(f, "_Geometric mean of per-test ratios vs reference "
 				"system. 1000 = identical to baseline._\n\n");
 			fprintf(f, "| Category | Score |\n");
 			fprintf(f, "|----------|------:|\n");
-			for (int32 i = 0; i < kNumScoreCategories; i++) {
-				fprintf(f, "| %s | %.0f |\n",
-					kScoreCategoryNames[i],
-					score.categoryScore[i]);
+			for (int32 i = 0; i < kNumScoreCategoriesAll; i++) {
+				if (score.categoryScore[i] > 0.0f)
+					fprintf(f, "| %s | %.0f |\n",
+						kScoreCategoryNamesAll[i],
+						score.categoryScore[i]);
+				else
+					fprintf(f, "| %s | -- |\n",
+						kScoreCategoryNamesAll[i]);
 			}
 			fprintf(f, "| **OVERALL** | **%.0f** |\n",
 				score.overall);
@@ -925,16 +1012,22 @@ MainWindow::_ExportResults()
 		// Score
 		fprintf(j, "  \"score\": {\n");
 		if (fSysResults.valid) {
-			ScoreResult score = ComputeScore(fSysResults);
+			ScoreResult score = ComputeScore(fSysResults,
+				fBench2DFPS, fGpuScore, fVkScore);
 			if (score.valid) {
 				static const char* jsonCatKeys[] = {
-					"cpu", "memory", "cache", "kernel", "messaging"
+					"cpu", "memory", "cache", "kernel", "messaging",
+					"graphics_2d", "gpu_opengl", "vulkan"
 				};
 				fprintf(j, "    \"method\": \"geometric_mean_vs_baseline\",\n");
 				fprintf(j, "    \"baseline\": 1000,\n");
-				for (int32 i = 0; i < kNumScoreCategories; i++) {
-					fprintf(j, "    \"%s\": %.1f,\n",
-						jsonCatKeys[i], score.categoryScore[i]);
+				for (int32 i = 0; i < kNumScoreCategoriesAll; i++) {
+					if (score.categoryScore[i] > 0.0f)
+						fprintf(j, "    \"%s\": %.1f,\n",
+							jsonCatKeys[i], score.categoryScore[i]);
+					else
+						fprintf(j, "    \"%s\": null,\n",
+							jsonCatKeys[i]);
 				}
 				fprintf(j, "    \"overall\": %.1f\n", score.overall);
 			}
