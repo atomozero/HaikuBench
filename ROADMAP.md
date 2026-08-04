@@ -3,7 +3,7 @@
 Living document. Tracks where the project is, what is inconsistent, and what
 ships next. Dates are absolute.
 
-## Where we are — 1.2.0 (released 2026-07-12)
+## Where we are — 1.3.0 (released 2026-08-04, tagged `v1.3.0`)
 
 - System benchmark: 20 tests, adaptive sampling, full statistics (p50/p95/CoV).
 - 2D benchmark: 24 tests, accelerant detection.
@@ -15,6 +15,11 @@ ships next. Dates are absolute.
 - Tabbed **benchmark deck** (single window, four `BView` panels) — replaces the
   former four standalone windows.
 - Slate `HeaderView` banner on the main window and the deck.
+- **Demoscene splash screen** — pure app_server 2D, no GL dependency.
+- **Localized** with the Haiku Locale Kit (English + Italian, 77 keys).
+- **Scriptable via `hey`** (Score / Results / RunAll / SystemBench).
+- **Settings menu** with a persistent store (splash toggle); `make` embeds the
+  signature/version/icon resources into the binary.
 
 ## Coherence audit (2026-08-03)
 
@@ -77,10 +82,24 @@ it a first-class Haiku citizen (localized, scriptable, coherently packaged).
 - [x] **Docs.** CHANGELOG 1.3.0, README feature bullets + Scripting/Localization
   sections, ROADMAP.
 
+## Next — 1.4.0 candidates
+
+Not yet started. Rough priority order:
+
+1. **Decouple libGL/glut** (audit finding #6). Load GL dynamically so the app —
+   splash, system and 2D benchmarks — launches on installs without Mesa; the
+   GPU and Teapot tabs disable themselves gracefully when GL is absent. This is
+   the biggest remaining coherence gap and unblocks "runs anywhere".
+2. **Headless benchmark mode** (`--run-all --json out.json`) complementing
+   `hey`, for CI and scripted runs with no window at all.
+3. **Grow the Settings store**: persist last results and window geometry, and
+   surface a couple more preferences now that the menu + store exist.
+
 ## Later (backlog)
 
-- Rename `*Window` panel files to `*Panel` for naming coherence.
-- Additional catalog languages (de, fr, es) once `it` proves the pipeline.
-- Headless benchmark mode (`--run-all --json out.json`) complementing `hey`.
-- Persist last results / preferences under `B_USER_SETTINGS_DIRECTORY`.
+- Rename `*Window` panel files to `*Panel` for naming coherence (audit #4).
+- Additional catalog languages (de, fr, es) — the `it` pipeline is proven.
 - Leaderboard submission from the export dialog.
+- Refresh the README screenshot to show the 1.3.0 UI (menu bar + splash).
+- Fill the recipe `CHECKSUM_SHA256` once the `v1.3.0` source tarball is
+  published on GitHub.
