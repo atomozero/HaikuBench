@@ -20,6 +20,7 @@
 #include <ScrollView.h>
 #include <SeparatorView.h>
 #include <Shape.h>
+#include <Window.h>
 
 #include <Accelerant.h>
 #include <Screen.h>
@@ -32,6 +33,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <Catalog.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "Bench2D"
 
 
 static const int32 kBenchW = 800;
@@ -1869,7 +1875,7 @@ Bench2DView::_RunTest(int32 testIndex)
 }
 
 
-// #pragma mark - Bench2DWindow
+// #pragma mark - Bench2DPanel
 
 
 static BStringView*
@@ -1892,11 +1898,9 @@ _MakeResultLabel(const char* name, const char* text, const rgb_color& color,
 }
 
 
-Bench2DWindow::Bench2DWindow(BMessenger target)
+Bench2DPanel::Bench2DPanel(BMessenger target)
 	:
-	BWindow(BRect(60, 40, 820, 520),
-		"HaikuBench — 2D Benchmark",
-		B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
+	BView("bench2dPanel", B_WILL_DRAW | B_SUPPORTS_LAYOUT),
 	fBenchView(NULL),
 	fBenchWin(NULL),
 	fBenchThread(-1),
@@ -1912,16 +1916,16 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 	memset(fLevelLabels, 0, sizeof(fLevelLabels));
 	memset(fTestLabels, 0, sizeof(fTestLabels));
 
-	BView* topView = new BView("top", B_WILL_DRAW);
-	topView->SetViewColor(kDarkBg);
+	SetViewColor(kDarkBg);
+	BView* topView = this;
 
 	// System info panel
 	BBox* sysBox = new BBox("b2dSysBox");
 	sysBox->SetViewColor(kDarkBg);
 	sysBox->SetLowColor(kDarkBg);
 
-	BStringView* sysTitle = _MakeResultLabel("b2dSysTitle", "2D Driver",
-		kLabelWhite2D, 12.0f, true);
+	BStringView* sysTitle = _MakeResultLabel("b2dSysTitle",
+		B_TRANSLATE("2D Driver"), kLabelWhite2D, 12.0f, true);
 	sysTitle->SetViewColor(kDarkBg);
 	sysTitle->SetLowColor(kDarkBg);
 	sysBox->SetLabel(sysTitle);
@@ -1929,16 +1933,16 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 	BView* sysInner = new BView("b2dSysInner", B_WILL_DRAW);
 	sysInner->SetViewColor(kDarkBg);
 
-	fDriverLabel = _MakeResultLabel("driver", "Driver: detecting...",
-		kWhite2D, 11.0f, true);
-	fDeviceLabel = _MakeResultLabel("device", "Device: --",
+	fDriverLabel = _MakeResultLabel("driver",
+		B_TRANSLATE("Driver: detecting..."), kWhite2D, 11.0f, true);
+	fDeviceLabel = _MakeResultLabel("device", B_TRANSLATE("Device: --"),
 		kWhite2D, 11.0f);
 	fAccelStatusLabel = _MakeResultLabel("accel",
-		"2D Acceleration: detecting...",
+		B_TRANSLATE("2D Acceleration: detecting..."),
 		kGray2D, 11.0f, true);
 	fHooksLabel = _MakeResultLabel("hooks", "",
 		kGray2D, 10.0f);
-	fTempLabel = _MakeResultLabel("temp", "Temp: reading...",
+	fTempLabel = _MakeResultLabel("temp", B_TRANSLATE("Temp: reading..."),
 		kGreen2D, 10.0f, true);
 
 	BLayoutBuilder::Group<>(sysInner, B_VERTICAL, 2)
@@ -1957,7 +1961,7 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 	resBox->SetLowColor(kDarkBg);
 
 	BStringView* resTitle = _MakeResultLabel("b2dResTitle",
-		"Benchmark Results", kLabelWhite2D, 12.0f, true);
+		B_TRANSLATE("Benchmark Results"), kLabelWhite2D, 12.0f, true);
 	resTitle->SetViewColor(kDarkBg);
 	resTitle->SetLowColor(kDarkBg);
 	resBox->SetLabel(resTitle);
@@ -2035,10 +2039,12 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 
 	// Status + button
 	fStatusLabel = _MakeResultLabel("status",
-		"24 tests, 6 levels. From rectangles to software 3D teapots.",
+		B_TRANSLATE("24 tests, 6 levels. From rectangles to software 3D "
+			"teapots."),
 		kGray2D, 10.0f);
 
-	BButton* runButton = new BButton("runBtn", "Run 2D Benchmark",
+	BButton* runButton = new BButton("runBtn",
+		B_TRANSLATE("Run 2D Benchmark"),
 		new BMessage(kMsgBench2DStart));
 
 	BLayoutBuilder::Group<>(topView, B_VERTICAL, 6)
@@ -2053,21 +2059,10 @@ Bench2DWindow::Bench2DWindow(BMessenger target)
 			.Add(runButton)
 		.End()
 	.End();
-
-	SetLayout(new BGroupLayout(B_VERTICAL));
-	AddChild(topView);
-
-	// Start periodic temperature updates
-	BMessage tempMsg(kMsgBench2DTempUpd);
-	fTempRunner = new BMessageRunner(BMessenger(this), &tempMsg, 2000000);
-
-	// Start hidden — will show after benchmark completes
-	Hide();
-	PostMessage(kMsgBench2DStart);
 }
 
 
-Bench2DWindow::~Bench2DWindow()
+Bench2DPanel::~Bench2DPanel()
 {
 	delete fTempRunner;
 	if (fBenchThread >= 0) {
@@ -2078,17 +2073,35 @@ Bench2DWindow::~Bench2DWindow()
 
 
 void
-Bench2DWindow::MessageReceived(BMessage* message)
+Bench2DPanel::AttachedToWindow()
+{
+	BView::AttachedToWindow();
+
+	// The Run button's message must reach this panel, not the window looper.
+	if (BButton* button = dynamic_cast<BButton*>(FindView("runBtn")))
+		button->SetTarget(this);
+
+	// Start periodic temperature updates (BMessenger(this) is valid now
+	// that the view is attached to a looper).
+	if (fTempRunner == NULL) {
+		BMessage tempMsg(kMsgBench2DTempUpd);
+		fTempRunner = new BMessageRunner(BMessenger(this), &tempMsg, 2000000);
+	}
+
+	// The benchmark is NOT auto-started: as a tab panel this view is attached
+	// as soon as the deck is built, long before the user opens the tab. The
+	// run is triggered by the panel's Run button or by the deck (RunTab).
+}
+
+
+void
+Bench2DPanel::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgBench2DStart:
 		{
 			if (fBenchThread >= 0)
 				break;
-
-			// Hide results window during benchmark
-			if (!IsHidden())
-				Hide();
 
 			// Open the drawing window for the benchmark
 			fBenchWin = new BWindow(
@@ -2138,13 +2151,21 @@ Bench2DWindow::MessageReceived(BMessage* message)
 
 			// Populate and show results window
 			_UpdateResultLabels();
-			fStatusLabel->SetText(
+			fStatusLabel->SetText(B_TRANSLATE(
 				"Done. From rectangles to software 3D teapots "
-				"\xE2\x80\x94 who needs a GPU?");
+				"\xE2\x80\x94 who needs a GPU?"));
 
-			if (IsHidden())
-				Show();
-			Activate();
+			// Report results to the main window. The former standalone window
+			// did this from QuitRequested (on close); a tab panel never
+			// closes, so we send on completion instead.
+			if (fCachedResults.valid) {
+				BMessage msg(kMsgBench2DResult);
+				for (int32 i = 0; i < kNumBench2DTests; i++) {
+					msg.AddFloat("ops_per_sec", fCachedResults.opsPerSec[i]);
+					msg.AddFloat("mb_per_sec", fCachedResults.mbPerSec[i]);
+				}
+				fTarget.SendMessage(&msg);
+			}
 			break;
 		}
 
@@ -2153,34 +2174,14 @@ Bench2DWindow::MessageReceived(BMessage* message)
 			break;
 
 		default:
-			BWindow::MessageReceived(message);
+			BView::MessageReceived(message);
 			break;
 	}
 }
 
 
-bool
-Bench2DWindow::QuitRequested()
-{
-	// Don't close while the benchmark is running
-	if (fBenchThread >= 0)
-		return false;
-
-	if (fCachedResults.valid) {
-		BMessage msg(kMsgBench2DResult);
-		for (int32 i = 0; i < kNumBench2DTests; i++) {
-			msg.AddFloat("ops_per_sec", fCachedResults.opsPerSec[i]);
-			msg.AddFloat("mb_per_sec", fCachedResults.mbPerSec[i]);
-		}
-		fTarget.SendMessage(&msg);
-	}
-
-	return true;
-}
-
-
 void
-Bench2DWindow::_UpdateResultLabels()
+Bench2DPanel::_UpdateResultLabels()
 {
 	// Use cached copies — fBenchView may have been destroyed
 	// when the benchmark drawing window was closed.
@@ -2239,18 +2240,18 @@ Bench2DWindow::_UpdateResultLabels()
 		fDeviceLabel->SetText(devText.String());
 		fDeviceLabel->SetHighColor(kWhite2D);
 	} else {
-		fDeviceLabel->SetText("Device: not detected");
+		fDeviceLabel->SetText(B_TRANSLATE("Device: not detected"));
 		fDeviceLabel->SetHighColor(kGray2D);
 	}
 
 	// 2D Acceleration status
 	if (accel.isHardwareAccel) {
 		fAccelStatusLabel->SetText(
-			"2D Acceleration: ACTIVE (hardware)");
+			B_TRANSLATE("2D Acceleration: ACTIVE (hardware)"));
 		fAccelStatusLabel->SetHighColor(kGreen2D);
 	} else {
 		fAccelStatusLabel->SetText(
-			"2D Acceleration: NONE (software rendering)");
+			B_TRANSLATE("2D Acceleration: NONE (software rendering)"));
 		fAccelStatusLabel->SetHighColor(kRed2D);
 	}
 
@@ -2266,7 +2267,7 @@ Bench2DWindow::_UpdateResultLabels()
 			accel.isHardwareAccel ? kCyan2D : kGray2D);
 	} else {
 		fHooksLabel->SetText(
-			"Hooks: detection via heuristic (clone failed)");
+			B_TRANSLATE("Hooks: detection via heuristic (clone failed)"));
 		fHooksLabel->SetHighColor(kGray2D);
 	}
 
@@ -2290,7 +2291,7 @@ Bench2DWindow::_UpdateResultLabels()
 
 
 void
-Bench2DWindow::_UpdateTemperature()
+Bench2DPanel::_UpdateTemperature()
 {
 	const char* zoneNames[] = {"CPU", "GPU"};
 	BString tempText;
@@ -2348,15 +2349,15 @@ Bench2DWindow::_UpdateTemperature()
 		fTempLabel->SetText(tempText.String());
 	} else {
 		fTempLabel->SetHighColor(kGray2D);
-		fTempLabel->SetText("Temp: N/A");
+		fTempLabel->SetText(B_TRANSLATE("Temp: N/A"));
 	}
 }
 
 
 /*static*/ int32
-Bench2DWindow::_BenchThread(void* data)
+Bench2DPanel::_BenchThread(void* data)
 {
-	Bench2DWindow* window = static_cast<Bench2DWindow*>(data);
+	Bench2DPanel* window = static_cast<Bench2DPanel*>(data);
 
 	// Give the benchmark window time to show
 	snooze(200000);

@@ -13,7 +13,7 @@
 #include <MessageRunner.h>
 #include <Messenger.h>
 #include <StringView.h>
-#include <Window.h>
+#include <View.h>
 
 
 enum {
@@ -75,17 +75,29 @@ private:
 };
 
 
-class GpuBenchWindow : public BWindow {
+class GpuBenchPanel : public BView {
 public:
-								GpuBenchWindow(BMessenger target);
-	virtual						~GpuBenchWindow();
+								GpuBenchPanel(BMessenger target);
+	virtual						~GpuBenchPanel();
 
+	virtual	void				AttachedToWindow();
 	virtual	void				MessageReceived(BMessage* message);
-	virtual	bool				QuitRequested();
+
+			// True while a benchmark thread is running or the software
+			// comparison pass is in progress (the deck blocks closing while
+			// any panel is busy).
+			bool				IsBusy() const
+									{ return fBenchThread >= 0 || fComparing; }
+
+			// The idle teapot preview is driven by fRedrawRunner; the deck
+			// pauses it when the tab is hidden.
+			void				StartPreview();
+			void				StopPreview();
 
 private:
 			void				_UpdateLabels();
 			bool				_RunSoftwareComparison();
+			void				_SendResults();
 
 	static	int32				_BenchThread(void* data);
 

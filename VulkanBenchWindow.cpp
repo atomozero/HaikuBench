@@ -12,6 +12,7 @@
 #include <GroupLayout.h>
 #include <LayoutBuilder.h>
 #include <SeparatorView.h>
+#include <Window.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -20,6 +21,11 @@
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
+
+#include <Catalog.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "VulkanBench"
 
 
 // Dynamic Vulkan function pointers
@@ -320,14 +326,12 @@ _CompileComputeShader(VkDevice device, VkShaderModule* module)
 }
 
 
-// #pragma mark - VulkanBenchWindow
+// #pragma mark - VulkanBenchPanel
 
 
-VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
+VulkanBenchPanel::VulkanBenchPanel(BMessenger target)
 	:
-	BWindow(BRect(100, 80, 680, 520),
-		"HaikuBench \xE2\x80\x94 Vulkan Benchmark",
-		B_TITLED_WINDOW, B_AUTO_UPDATE_SIZE_LIMITS),
+	BView("vulkanPanel", B_WILL_DRAW | B_SUPPORTS_LAYOUT),
 	fTarget(target),
 	fBenchThread(-1),
 	fInstance(NULL),
@@ -340,16 +344,16 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 {
 	fResults = {};
 
-	BView* topView = new BView("top", B_WILL_DRAW);
-	topView->SetViewColor(kDarkBg);
+	SetViewColor(kDarkBg);
+	BView* topView = this;
 
 	// System info panel (BBox with title like MainWindow)
 	BBox* sysBox = new BBox("vkSysBox");
 	sysBox->SetViewColor(kDarkBg);
 	sysBox->SetLowColor(kDarkBg);
 
-	BStringView* sysTitle = _MakeLabel("vkSysTitle", "Vulkan Device",
-		kLabelWhite, 12.0f, true);
+	BStringView* sysTitle = _MakeLabel("vkSysTitle",
+		B_TRANSLATE("Vulkan Device"), kLabelWhite, 12.0f, true);
 	sysTitle->SetViewColor(kDarkBg);
 	sysTitle->SetLowColor(kDarkBg);
 	sysBox->SetLabel(sysTitle);
@@ -357,9 +361,9 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 	BView* sysInner = new BView("vkSysInner", B_WILL_DRAW);
 	sysInner->SetViewColor(kDarkBg);
 
-	fDeviceLabel = _MakeLabel("dev", "Device: detecting...",
+	fDeviceLabel = _MakeLabel("dev", B_TRANSLATE("Device: detecting..."),
 		kWhite, 11.0f, true);
-	fDriverLabel = _MakeLabel("drv", "Driver: --",
+	fDriverLabel = _MakeLabel("drv", B_TRANSLATE("Driver: --"),
 		kCyan, 11.0f);
 
 	BLayoutBuilder::Group<>(sysInner, B_VERTICAL, 2)
@@ -374,8 +378,8 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 	resBox->SetViewColor(kDarkBg);
 	resBox->SetLowColor(kDarkBg);
 
-	BStringView* resTitle = _MakeLabel("vkResTitle", "Benchmark Results",
-		kLabelWhite, 12.0f, true);
+	BStringView* resTitle = _MakeLabel("vkResTitle",
+		B_TRANSLATE("Benchmark Results"), kLabelWhite, 12.0f, true);
 	resTitle->SetViewColor(kDarkBg);
 	resTitle->SetLowColor(kDarkBg);
 	resBox->SetLabel(resTitle);
@@ -383,7 +387,7 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 	BView* resInner = new BView("vkResInner", B_WILL_DRAW);
 	resInner->SetViewColor(kDarkBg);
 
-	BStringView* header = _MakeLabel("hdr", "Compute Tests",
+	BStringView* header = _MakeLabel("hdr", B_TRANSLATE("Compute Tests"),
 		kCyan, 11.0f, true);
 
 	BFont monoFont(be_fixed_font);
@@ -422,11 +426,11 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 
 	// Status + button
 	fStatusLabel = _MakeLabel("status",
-		"Offscreen compute tests. No window surface needed.",
+		B_TRANSLATE("Offscreen compute tests. No window surface needed."),
 		kGray, 10.0f);
 
 	BButton* startButton = new BButton("startBtn",
-		"Run Vulkan Benchmark", new BMessage(kMsgVkBenchStart));
+		B_TRANSLATE("Run Vulkan Benchmark"), new BMessage(kMsgVkBenchStart));
 
 	BLayoutBuilder::Group<>(topView, B_VERTICAL, 6)
 		.SetInsets(12, 12, 12, 12)
@@ -440,13 +444,10 @@ VulkanBenchWindow::VulkanBenchWindow(BMessenger target)
 			.Add(startButton)
 		.End()
 	.End();
-
-	SetLayout(new BGroupLayout(B_VERTICAL));
-	AddChild(topView);
 }
 
 
-VulkanBenchWindow::~VulkanBenchWindow()
+VulkanBenchPanel::~VulkanBenchPanel()
 {
 	if (fBenchThread >= 0) {
 		status_t result;
@@ -456,23 +457,24 @@ VulkanBenchWindow::~VulkanBenchWindow()
 }
 
 
-bool
-VulkanBenchWindow::QuitRequested()
+void
+VulkanBenchPanel::AttachedToWindow()
 {
-	if (fBenchThread >= 0)
-		return false;
-	return true;
+	BView::AttachedToWindow();
+	// The Run button's message must reach this panel, not the window looper.
+	if (BButton* button = dynamic_cast<BButton*>(FindView("startBtn")))
+		button->SetTarget(this);
 }
 
 
 void
-VulkanBenchWindow::MessageReceived(BMessage* message)
+VulkanBenchPanel::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgVkBenchStart:
 			if (fBenchThread >= 0)
 				break;
-			fStatusLabel->SetText("Initializing Vulkan...");
+			fStatusLabel->SetText(B_TRANSLATE("Initializing Vulkan..."));
 			fStatusLabel->SetHighColor(kYellow);
 			fBenchThread = spawn_thread(_BenchThread, "vulkan_bench",
 				B_NORMAL_PRIORITY, this);
@@ -481,14 +483,14 @@ VulkanBenchWindow::MessageReceived(BMessage* message)
 			break;
 
 		default:
-			BWindow::MessageReceived(message);
+			BView::MessageReceived(message);
 			break;
 	}
 }
 
 
 bool
-VulkanBenchWindow::_InitVulkan()
+VulkanBenchPanel::_InitVulkan()
 {
 	if (!_LoadVulkan())
 		return false;
@@ -627,7 +629,7 @@ VulkanBenchWindow::_InitVulkan()
 
 
 void
-VulkanBenchWindow::_Cleanup()
+VulkanBenchPanel::_Cleanup()
 {
 	VkDevice device = (VkDevice)fDevice;
 	VkInstance instance = (VkInstance)fInstance;
@@ -654,7 +656,7 @@ VulkanBenchWindow::_Cleanup()
 
 
 float
-VulkanBenchWindow::_TestMemoryBandwidth()
+VulkanBenchPanel::_TestMemoryBandwidth()
 {
 	VkDevice device = (VkDevice)fDevice;
 	VkPhysicalDevice physDev = (VkPhysicalDevice)fPhysicalDevice;
@@ -720,7 +722,7 @@ VulkanBenchWindow::_TestMemoryBandwidth()
 
 
 float
-VulkanBenchWindow::_TestComputeShader()
+VulkanBenchPanel::_TestComputeShader()
 {
 	VkDevice device = (VkDevice)fDevice;
 	VkPhysicalDevice physDev = (VkPhysicalDevice)fPhysicalDevice;
@@ -966,7 +968,7 @@ VulkanBenchWindow::_TestComputeShader()
 
 
 float
-VulkanBenchWindow::_TestBufferCopy()
+VulkanBenchPanel::_TestBufferCopy()
 {
 	VkDevice device = (VkDevice)fDevice;
 	VkPhysicalDevice physDev = (VkPhysicalDevice)fPhysicalDevice;
@@ -1076,7 +1078,7 @@ VulkanBenchWindow::_TestBufferCopy()
 
 
 float
-VulkanBenchWindow::_TestFillRate()
+VulkanBenchPanel::_TestFillRate()
 {
 	VkDevice device = (VkDevice)fDevice;
 	VkPhysicalDevice physDev = (VkPhysicalDevice)fPhysicalDevice;
@@ -1169,19 +1171,19 @@ VulkanBenchWindow::_TestFillRate()
 
 
 void
-VulkanBenchWindow::_RunBenchmark()
+VulkanBenchPanel::_RunBenchmark()
 {
 	if (!_InitVulkan()) {
-		if (Lock()) {
-			fStatusLabel->SetText(
-				"Vulkan not available. Install vulkan + mesa_lavapipe.");
+		if (LockLooper()) {
+			fStatusLabel->SetText(B_TRANSLATE(
+				"Vulkan not available. Install vulkan + mesa_lavapipe."));
 			fStatusLabel->SetHighColor((rgb_color){255, 80, 80, 255});
-			Unlock();
+			UnlockLooper();
 		}
 		return;
 	}
 
-	if (Lock()) {
+	if (LockLooper()) {
 		BString devText;
 		devText.SetToFormat("Device: %s",
 			fResults.deviceName.String());
@@ -1190,19 +1192,19 @@ VulkanBenchWindow::_RunBenchmark()
 		BString drvText;
 		drvText.SetToFormat("Driver: %s", fResults.driverInfo.String());
 		fDriverLabel->SetText(drvText.String());
-		Unlock();
+		UnlockLooper();
 	}
 
-	typedef float (VulkanBenchWindow::*TestFunc)();
+	typedef float (VulkanBenchPanel::*TestFunc)();
 	TestFunc tests[] = {
-		&VulkanBenchWindow::_TestMemoryBandwidth,
-		&VulkanBenchWindow::_TestComputeShader,
-		&VulkanBenchWindow::_TestBufferCopy,
-		&VulkanBenchWindow::_TestFillRate
+		&VulkanBenchPanel::_TestMemoryBandwidth,
+		&VulkanBenchPanel::_TestComputeShader,
+		&VulkanBenchPanel::_TestBufferCopy,
+		&VulkanBenchPanel::_TestFillRate
 	};
 
 	for (int32 i = 0; i < kNumVkTests; i++) {
-		if (Lock()) {
+		if (LockLooper()) {
 			BString status;
 			status.SetToFormat("Running: %s (%" B_PRId32 "/%d)...",
 				kTestNames[i], i + 1, kNumVkTests);
@@ -1213,12 +1215,12 @@ VulkanBenchWindow::_RunBenchmark()
 			running.SetToFormat("  %-22s  running...", kTestNames[i]);
 			fTestLabels[i]->SetText(running.String());
 			fTestLabels[i]->SetHighColor(kYellow);
-			Unlock();
+			UnlockLooper();
 		}
 
 		fResults.scores[i] = (this->*tests[i])();
 
-		if (Lock()) {
+		if (LockLooper()) {
 			BString text;
 			if (fResults.scores[i] < 0.0f) {
 				text.SetToFormat("  %-22s       N/A %s",
@@ -1234,7 +1236,7 @@ VulkanBenchWindow::_RunBenchmark()
 				fTestLabels[i]->SetHighColor(kGreen);
 			}
 			fTestLabels[i]->SetText(text.String());
-			Unlock();
+			UnlockLooper();
 		}
 	}
 
@@ -1251,7 +1253,7 @@ VulkanBenchWindow::_RunBenchmark()
 		fResults.overallScore = powf(product, 1.0f / validCount);
 	fResults.valid = (validCount > 0);
 
-	if (Lock()) {
+	if (LockLooper()) {
 		if (fResults.valid) {
 			BString scoreText;
 			scoreText.SetToFormat(
@@ -1260,9 +1262,9 @@ VulkanBenchWindow::_RunBenchmark()
 			fScoreLabel->SetText(scoreText.String());
 		}
 
-		fStatusLabel->SetText("Vulkan benchmark complete!");
+		fStatusLabel->SetText(B_TRANSLATE("Vulkan benchmark complete!"));
 		fStatusLabel->SetHighColor(kGreen);
-		Unlock();
+		UnlockLooper();
 	}
 
 	// Send results to main window
@@ -1277,14 +1279,14 @@ VulkanBenchWindow::_RunBenchmark()
 
 
 /*static*/ int32
-VulkanBenchWindow::_BenchThread(void* data)
+VulkanBenchPanel::_BenchThread(void* data)
 {
-	VulkanBenchWindow* window = static_cast<VulkanBenchWindow*>(data);
+	VulkanBenchPanel* window = static_cast<VulkanBenchPanel*>(data);
 	window->_RunBenchmark();
 
-	if (window->Lock()) {
+	if (window->LockLooper()) {
 		window->fBenchThread = -1;
-		window->Unlock();
+		window->UnlockLooper();
 	}
 
 	return 0;

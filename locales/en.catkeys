@@ -1,0 +1,78 @@
+1	English	application/x-vnd.HaikuBench	3794973361
+Messaging (BMessage, BLooper)	MainWindow		Messaging (BMessage, BLooper)
+OpenGL GPU benchmark	BenchDeck		OpenGL GPU benchmark
+Run All: starting system benchmark...	MainWindow		Run All: starting system benchmark...
+Detecting renderer...	GpuBench		Detecting renderer...
+Kernel (Semaphores, Threads, Ports, Areas)	MainWindow		Kernel (Semaphores, Threads, Ports, Areas)
+2D Bench	MainWindow		2D Bench
+OK	MainWindow		OK
+Benchmark Results	Bench2D		Benchmark Results
+GPU Device	GpuBench		GPU Device
+2D Acceleration: detecting...	Bench2D		2D Acceleration: detecting...
+Offscreen compute tests. No window surface needed.	VulkanBench		Offscreen compute tests. No window surface needed.
+2D Driver	Bench2D		2D Driver
+Could not create export file.	MainWindow		Could not create export file.
+Vulkan	MainWindow		Vulkan
+2D Acceleration: NONE (software rendering)	Bench2D		2D Acceleration: NONE (software rendering)
+System Bench	MainWindow		System Bench
+Score (baseline = 1000)	MainWindow		Score (baseline = 1000)
+Run All: 2D done, starting GPU...	MainWindow		Run All: 2D done, starting GPU...
+Cache	MainWindow		Cache
+Teapots: 4	Teapot		Teapots: 4
+Export .md	MainWindow		Export .md
+Interactive OpenGL teapots	BenchDeck		Interactive OpenGL teapots
+Device: not detected	Bench2D		Device: not detected
+Export	MainWindow		Export
+Vulkan compute benchmark	BenchDeck		Vulkan compute benchmark
+Compute Tests	VulkanBench		Compute Tests
+CPU	MainWindow		CPU
+Run All complete!	MainWindow		Run All complete!
+Temp: N/A	Bench2D		Temp: N/A
+2D drawing benchmark (app_server)	BenchDeck		2D drawing benchmark (app_server)
+Driver: --	VulkanBench		Driver: --
+Vendor: detecting...	GpuBench		Vendor: detecting...
+2D Acceleration: ACTIVE (hardware)	Bench2D		2D Acceleration: ACTIVE (hardware)
+Error	MainWindow		Error
+Initializing Vulkan...	VulkanBench		Initializing Vulkan...
+GPU benchmark complete!	GpuBench		GPU benchmark complete!
+Device: --	Bench2D		Device: --
+Comparing: same tests on the software renderer (this takes ~20s)...	GpuBench		Comparing: same tests on the software renderer (this takes ~20s)...
+OpenGL: --	GpuBench		OpenGL: --
+Teapot 3D	MainWindow		Teapot 3D
+Ready — press a benchmark to start	MainWindow		Ready — press a benchmark to start
+Haiku has been rendering teapots since 2001. How many can yours handle?	Teapot		Haiku has been rendering teapots since 2001. How many can yours handle?
+Driver: detecting...	Bench2D		Driver: detecting...
+Device: detecting...	VulkanBench		Device: detecting...
+GPU Bench	MainWindow		GPU Bench
+Vulkan Device	VulkanBench		Vulkan Device
+Hooks: detection via heuristic (clone failed)	Bench2D		Hooks: detection via heuristic (clone failed)
+Run 2D Benchmark	Bench2D		Run 2D Benchmark
+Benchmarks	BenchDeck		Benchmarks
+Run All: system done, starting 2D...	MainWindow		Run All: system done, starting 2D...
+Start GPU Benchmark	GpuBench		Start GPU Benchmark
+Run All: GPU done, starting Vulkan...	MainWindow		Run All: GPU done, starting Vulkan...
+System benchmark complete!	MainWindow		System benchmark complete!
+Temp: reading...	Bench2D		Temp: reading...
+Running system benchmarks...	MainWindow		Running system benchmarks...
+Vulkan not available. Install vulkan + mesa_lavapipe.	VulkanBench		Vulkan not available. Install vulkan + mesa_lavapipe.
+Benchmark Results	MainWindow		Benchmark Results
+Click Start to begin GPU benchmark	GpuBench		Click Start to begin GPU benchmark
+24 tests, 6 levels. From rectangles to software 3D teapots.	Bench2D		24 tests, 6 levels. From rectangles to software 3D teapots.
+Run Vulkan Benchmark	VulkanBench		Run Vulkan Benchmark
+Press 'System Bench' to start	MainWindow		Press 'System Bench' to start
+Vulkan benchmark complete!	VulkanBench		Vulkan benchmark complete!
+Temp: reading...	MainWindow		Temp: reading...
+Mesa: --	GpuBench		Mesa: --
+System	MainWindow		System
+Benchmark Results	VulkanBench		Benchmark Results
+Graphics	MainWindow		Graphics
+Done. From rectangles to software 3D teapots — who needs a GPU?	Bench2D		Done. From rectangles to software 3D teapots — who needs a GPU?
+Run All	MainWindow		Run All
+FPS: --	Teapot		FPS: --
+Show splash screen at startup	MainWindow		Show splash screen at startup
+Settings	MainWindow		Settings
+Benchmark Results	GpuBench		Benchmark Results
+Memory	MainWindow		Memory
+Temp: no sensors found	MainWindow		Temp: no sensors found
+Running GPU benchmark...	GpuBench		Running GPU benchmark...
+Renderer: --	GpuBench		Renderer: --

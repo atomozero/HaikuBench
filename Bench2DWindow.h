@@ -10,7 +10,9 @@
 #include <Messenger.h>
 #include <StringView.h>
 #include <View.h>
-#include <Window.h>
+
+
+class BWindow;
 
 
 enum {
@@ -68,13 +70,17 @@ private:
 };
 
 
-class Bench2DWindow : public BWindow {
+class Bench2DPanel : public BView {
 public:
-								Bench2DWindow(BMessenger target);
-	virtual						~Bench2DWindow();
+								Bench2DPanel(BMessenger target);
+	virtual						~Bench2DPanel();
 
+	virtual	void				AttachedToWindow();
 	virtual	void				MessageReceived(BMessage* message);
-	virtual	bool				QuitRequested();
+
+			// True while a benchmark thread is running (the deck blocks
+			// closing while any panel is busy).
+			bool				IsBusy() const { return fBenchThread >= 0; }
 
 private:
 			void				_UpdateResultLabels();

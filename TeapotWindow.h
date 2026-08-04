@@ -12,7 +12,7 @@
 #include <GLView.h>
 #include <Messenger.h>
 #include <StringView.h>
-#include <Window.h>
+#include <View.h>
 
 
 enum {
@@ -53,13 +53,21 @@ private:
 };
 
 
-class TeapotWindow : public BWindow {
+class TeapotPanel : public BView {
 public:
-								TeapotWindow(BMessenger target);
-	virtual						~TeapotWindow();
+								TeapotPanel(BMessenger target);
+	virtual						~TeapotPanel();
 
+	virtual	void				AttachedToWindow();
 	virtual	void				MessageReceived(BMessage* message);
-	virtual	bool				QuitRequested();
+
+			// The deck starts/stops rendering when this panel is selected.
+			void				StartRendering();
+			void				StopRendering();
+
+			// True while the render thread is running (the deck blocks
+			// closing while any panel is busy).
+			bool				IsBusy() const { return fRendering; }
 
 private:
 			void				_UpdateCountLabel();

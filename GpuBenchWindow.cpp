@@ -28,6 +28,11 @@
 
 #include <OS.h>
 
+#include <Catalog.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "GpuBench"
+
 
 static const rgb_color kDarkBg = {13, 17, 23, 255};
 static const rgb_color kGreen = {57, 211, 83, 255};
@@ -703,28 +708,25 @@ GpuBenchGLView::_TestCombined()
 }
 
 
-// #pragma mark - GpuBenchWindow
+// #pragma mark - GpuBenchPanel
 
 
-GpuBenchWindow::GpuBenchWindow(BMessenger target)
+GpuBenchPanel::GpuBenchPanel(BMessenger target)
 	:
-	BWindow(BRect(120, 120, 780, 620),
-		"HaikuBench — GPU Benchmark",
-		B_TITLED_WINDOW,
-		B_AUTO_UPDATE_SIZE_LIMITS),
+	BView("gpuPanel", B_WILL_DRAW | B_SUPPORTS_LAYOUT),
 	fTarget(target),
 	fComparing(false),
 	fBenchThread(-1),
 	fRedrawRunner(NULL)
 {
+	SetViewColor(kDarkBg);
 	memset(&fSwResults, 0, sizeof(fSwResults));
 
-	BView* topView = new BView("top", B_WILL_DRAW);
-	topView->SetViewColor(kDarkBg);
+	BView* topView = this;
 
 	// Acceleration badge — the headline verdict, filled in as soon as the
 	// GL context is up
-	fAccelBadge = _MakeLabel("accelBadge", "Detecting renderer...",
+	fAccelBadge = _MakeLabel("accelBadge", B_TRANSLATE("Detecting renderer..."),
 		kGray, 13.0f, true);
 
 	// GL view — visible preview of the running benchmark
@@ -736,7 +738,7 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 	sysBox->SetViewColor(kDarkBg);
 	sysBox->SetLowColor(kDarkBg);
 
-	BStringView* sysTitle = _MakeLabel("gpuSysTitle", "GPU Device",
+	BStringView* sysTitle = _MakeLabel("gpuSysTitle", B_TRANSLATE("GPU Device"),
 		kLabelWhite, 12.0f, true);
 	sysTitle->SetViewColor(kDarkBg);
 	sysTitle->SetLowColor(kDarkBg);
@@ -745,12 +747,13 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 	BView* sysInner = new BView("gpuSysInner", B_WILL_DRAW);
 	sysInner->SetViewColor(kDarkBg);
 
-	fGpuLabel = _MakeLabel("gpu", "Vendor: detecting...", kWhite, 11.0f, true);
-	fRendererLabel = _MakeLabel("renderer", "Renderer: --",
+	fGpuLabel = _MakeLabel("gpu", B_TRANSLATE("Vendor: detecting..."), kWhite,
+		11.0f, true);
+	fRendererLabel = _MakeLabel("renderer", B_TRANSLATE("Renderer: --"),
 		kWhite, 11.0f);
-	fGlVersionLabel = _MakeLabel("glver", "OpenGL: --",
+	fGlVersionLabel = _MakeLabel("glver", B_TRANSLATE("OpenGL: --"),
 		{80, 200, 220, 255}, 11.0f);
-	fMesaVersionLabel = _MakeLabel("mesa", "Mesa: --",
+	fMesaVersionLabel = _MakeLabel("mesa", B_TRANSLATE("Mesa: --"),
 		{80, 200, 220, 255}, 11.0f);
 
 	BLayoutBuilder::Group<>(sysInner, B_VERTICAL, 2)
@@ -767,8 +770,8 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 	resBox->SetViewColor(kDarkBg);
 	resBox->SetLowColor(kDarkBg);
 
-	BStringView* resTitle = _MakeLabel("gpuResTitle", "Benchmark Results",
-		kLabelWhite, 12.0f, true);
+	BStringView* resTitle = _MakeLabel("gpuResTitle",
+		B_TRANSLATE("Benchmark Results"), kLabelWhite, 12.0f, true);
 	resTitle->SetViewColor(kDarkBg);
 	resTitle->SetLowColor(kDarkBg);
 	resBox->SetLabel(resTitle);
@@ -828,10 +831,12 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 	resBox->AddChild(resInner);
 
 	// Status + button
-	fStatusLabel = _MakeLabel("status", "Click Start to begin GPU benchmark",
+	fStatusLabel = _MakeLabel("status",
+		B_TRANSLATE("Click Start to begin GPU benchmark"),
 		kGray, 10.0f);
 
-	BButton* startButton = new BButton("startBtn", "Start GPU Benchmark",
+	BButton* startButton = new BButton("startBtn",
+		B_TRANSLATE("Start GPU Benchmark"),
 		new BMessage(kMsgGpuBenchStart));
 
 	// GLView shows live preview of the running benchmark
@@ -852,18 +857,10 @@ GpuBenchWindow::GpuBenchWindow(BMessenger target)
 			.Add(startButton)
 		.End()
 	.End();
-
-	SetLayout(new BGroupLayout(B_VERTICAL));
-	AddChild(topView);
-
-	// Timer for teapot animation (~30 FPS)
-	BMessage redrawMsg(kMsgGpuRedraw);
-	fRedrawRunner = new BMessageRunner(BMessenger(this), &redrawMsg,
-		33333);
 }
 
 
-GpuBenchWindow::~GpuBenchWindow()
+GpuBenchPanel::~GpuBenchPanel()
 {
 	delete fRedrawRunner;
 	if (fBenchThread >= 0) {
@@ -874,7 +871,38 @@ GpuBenchWindow::~GpuBenchWindow()
 
 
 void
-GpuBenchWindow::MessageReceived(BMessage* message)
+GpuBenchPanel::AttachedToWindow()
+{
+	BView::AttachedToWindow();
+	// The Start button's message must reach this panel, not the window looper.
+	if (BButton* button = dynamic_cast<BButton*>(FindView("startBtn")))
+		button->SetTarget(this);
+}
+
+
+void
+GpuBenchPanel::StartPreview()
+{
+	if (fRedrawRunner != NULL)
+		return;
+
+	// Timer for teapot animation (~30 FPS)
+	BMessage redrawMsg(kMsgGpuRedraw);
+	fRedrawRunner = new BMessageRunner(BMessenger(this), &redrawMsg,
+		33333);
+}
+
+
+void
+GpuBenchPanel::StopPreview()
+{
+	delete fRedrawRunner;
+	fRedrawRunner = NULL;
+}
+
+
+void
+GpuBenchPanel::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgGpuBenchStart:
@@ -882,7 +910,7 @@ GpuBenchWindow::MessageReceived(BMessage* message)
 			if (fBenchThread >= 0)
 				break;
 
-			fStatusLabel->SetText("Running GPU benchmark...");
+			fStatusLabel->SetText(B_TRANSLATE("Running GPU benchmark..."));
 			fStatusLabel->SetHighColor(kYellow);
 			fBenchThread = spawn_thread(_BenchThread, "gpu_benchmark",
 				B_NORMAL_PRIORITY, this);
@@ -897,45 +925,16 @@ GpuBenchWindow::MessageReceived(BMessage* message)
 			break;
 
 		default:
-			BWindow::MessageReceived(message);
+			BView::MessageReceived(message);
 			break;
 	}
 }
 
 
-bool
-GpuBenchWindow::QuitRequested()
-{
-	if (fGLView->IsRunning() || fComparing)
-		return false;
-
-	// Send results back if valid
-	if (fGLView->Results().valid) {
-		GpuBenchResults results = fGLView->Results();
-		BMessage result(kMsgGpuBenchResult);
-		for (int32 i = 0; i < kNumGpuTests; i++)
-			result.AddFloat("gpu_fps", results.fps[i]);
-		result.AddFloat("gpu_score", results.score);
-		result.AddString("gpu_info", fGLView->GpuInfo());
-		result.AddBool("gpu_hardware", fGLView->IsHardware());
-		result.AddFloat("gpu_cpu_load", results.cpuLoad);
-		if (fSwResults.valid && fSwResults.score > 0.0f) {
-			result.AddFloat("gpu_sw_score", fSwResults.score);
-			result.AddFloat("gpu_speedup",
-				results.score / fSwResults.score);
-			result.AddString("gpu_sw_renderer", fSwRenderer);
-		}
-		fTarget.SendMessage(&result);
-	}
-
-	return true;
-}
-
-
 void
-GpuBenchWindow::_UpdateLabels()
+GpuBenchPanel::_UpdateLabels()
 {
-	if (!Lock())
+	if (!LockLooper())
 		return;
 
 	GpuBenchResults results = fGLView->Results();
@@ -1066,14 +1065,14 @@ GpuBenchWindow::_UpdateLabels()
 		fCpuLoadLabel->SetText(cpuText.String());
 	}
 
-	Unlock();
+	UnlockLooper();
 }
 
 
 /*static*/ int32
-GpuBenchWindow::_BenchThread(void* data)
+GpuBenchPanel::_BenchThread(void* data)
 {
-	GpuBenchWindow* window = static_cast<GpuBenchWindow*>(data);
+	GpuBenchPanel* window = static_cast<GpuBenchPanel*>(data);
 
 	// Update labels periodically during benchmark
 	// The GL view runs the actual benchmark
@@ -1108,7 +1107,7 @@ GpuBenchWindow::_BenchThread(void* data)
 		compared = window->_RunSoftwareComparison();
 
 	// Final update
-	if (window->Lock()) {
+	if (window->LockLooper()) {
 		window->_UpdateLabels();
 		if (compared && window->fSwResults.score > 0.0f) {
 			BString status;
@@ -1118,13 +1117,42 @@ GpuBenchWindow::_BenchThread(void* data)
 				window->fSwRenderer.String());
 			window->fStatusLabel->SetText(status.String());
 		} else
-			window->fStatusLabel->SetText("GPU benchmark complete!");
+			window->fStatusLabel->SetText(
+				B_TRANSLATE("GPU benchmark complete!"));
 		window->fStatusLabel->SetHighColor(kGreen);
 		window->fBenchThread = -1;
-		window->Unlock();
+		window->UnlockLooper();
 	}
 
+	// Report results to the main window. The former standalone window did this
+	// from QuitRequested (on close); a tab panel never closes, so we send on
+	// completion instead.
+	window->_SendResults();
+
 	return 0;
+}
+
+
+void
+GpuBenchPanel::_SendResults()
+{
+	if (!fGLView->Results().valid)
+		return;
+
+	GpuBenchResults results = fGLView->Results();
+	BMessage result(kMsgGpuBenchResult);
+	for (int32 i = 0; i < kNumGpuTests; i++)
+		result.AddFloat("gpu_fps", results.fps[i]);
+	result.AddFloat("gpu_score", results.score);
+	result.AddString("gpu_info", fGLView->GpuInfo());
+	result.AddBool("gpu_hardware", fGLView->IsHardware());
+	result.AddFloat("gpu_cpu_load", results.cpuLoad);
+	if (fSwResults.valid && fSwResults.score > 0.0f) {
+		result.AddFloat("gpu_sw_score", fSwResults.score);
+		result.AddFloat("gpu_speedup", results.score / fSwResults.score);
+		result.AddString("gpu_sw_renderer", fSwRenderer);
+	}
+	fTarget.SendMessage(&result);
 }
 
 
@@ -1133,15 +1161,15 @@ GpuBenchWindow::_BenchThread(void* data)
 // per executable file — so the child runs from a temporary copy of the
 // binary. Returns true when software results were collected.
 bool
-GpuBenchWindow::_RunSoftwareComparison()
+GpuBenchPanel::_RunSoftwareComparison()
 {
 	fComparing = true;
 
-	if (Lock()) {
-		fStatusLabel->SetText("Comparing: same tests on the software "
-			"renderer (this takes ~20s)...");
+	if (LockLooper()) {
+		fStatusLabel->SetText(B_TRANSLATE("Comparing: same tests on the "
+			"software renderer (this takes ~20s)..."));
 		fStatusLabel->SetHighColor(kYellow);
-		Unlock();
+		UnlockLooper();
 	}
 
 	app_info info;

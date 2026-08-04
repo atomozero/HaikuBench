@@ -22,6 +22,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <Catalog.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "Teapot"
+
 
 // #pragma mark - TeapotGLView
 
@@ -256,38 +261,38 @@ TeapotGLView::_SetupLighting()
 }
 
 
-// #pragma mark - TeapotWindow
+// #pragma mark - TeapotPanel
 
 
-TeapotWindow::TeapotWindow(BMessenger target)
+TeapotPanel::TeapotPanel(BMessenger target)
 	:
-	BWindow(BRect(150, 150, 700, 600),
-		"HaikuBench — Teapot 3D",
-		B_TITLED_WINDOW, 0),
+	BView("teapotPanel", B_WILL_DRAW | B_SUPPORTS_LAYOUT),
 	fTarget(target),
 	fCountLabel(NULL),
 	fFPSLabel(NULL),
 	fRenderThread(-1),
 	fRendering(false)
 {
-	BRect glFrame(0, 0, Bounds().Width(), Bounds().Height() - 80);
+	SetViewColor(13, 17, 23); // #0d1117
+	BView* topView = this;
+
+	BRect glFrame(0, 0, 550, 370);
 	fGLView = new TeapotGLView(glFrame);
-	AddChild(fGLView);
+	topView->AddChild(fGLView);
 
 	BView* bottomView = new BView(
-		BRect(0, Bounds().Height() - 79, Bounds().Width(),
-			Bounds().Height()),
+		BRect(0, 371, 550, 450),
 		"bottom", B_FOLLOW_LEFT_RIGHT | B_FOLLOW_BOTTOM, B_WILL_DRAW);
 	bottomView->SetViewColor(13, 17, 23); // #0d1117
 
 	fCountLabel = new BStringView(
-		BRect(10, 5, 200, 22), "count", "Teapots: 4");
+		BRect(10, 5, 200, 22), "count", B_TRANSLATE("Teapots: 4"));
 	fCountLabel->SetHighColor(230, 237, 243); // #e6edf3
 	fCountLabel->SetFont(be_bold_font);
 	bottomView->AddChild(fCountLabel);
 
 	fFPSLabel = new BStringView(
-		BRect(210, 5, 400, 22), "fps", "FPS: --");
+		BRect(210, 5, 400, 22), "fps", B_TRANSLATE("FPS: --"));
 	fFPSLabel->SetHighColor(57, 211, 83); // #39d353
 	fFPSLabel->SetFont(be_bold_font);
 	bottomView->AddChild(fFPSLabel);
@@ -302,9 +307,9 @@ TeapotWindow::TeapotWindow(BMessenger target)
 	bottomView->AddChild(removeButton);
 
 	BStringView* tagline = new BStringView(
-		BRect(10, 55, Bounds().Width() - 10, 75), "tagline",
-		"Haiku has been rendering teapots since 2001. "
-		"How many can yours handle?");
+		BRect(10, 55, 540, 75), "tagline",
+		B_TRANSLATE("Haiku has been rendering teapots since 2001. "
+			"How many can yours handle?"));
 	tagline->SetHighColor(170, 180, 195); // kGray — matches palette
 	BFont font;
 	tagline->GetFont(&font);
@@ -312,20 +317,45 @@ TeapotWindow::TeapotWindow(BMessenger target)
 	tagline->SetFont(&font);
 	bottomView->AddChild(tagline);
 
-	AddChild(bottomView);
-
-	_StartRendering();
+	topView->AddChild(bottomView);
 }
 
 
-TeapotWindow::~TeapotWindow()
+TeapotPanel::~TeapotPanel()
 {
 	_StopRendering();
 }
 
 
 void
-TeapotWindow::MessageReceived(BMessage* message)
+TeapotPanel::AttachedToWindow()
+{
+	BView::AttachedToWindow();
+
+	// The control buttons' messages must reach this panel, not the window.
+	if (BButton* button = dynamic_cast<BButton*>(FindView("add")))
+		button->SetTarget(this);
+	if (BButton* button = dynamic_cast<BButton*>(FindView("remove")))
+		button->SetTarget(this);
+}
+
+
+void
+TeapotPanel::StartRendering()
+{
+	_StartRendering();
+}
+
+
+void
+TeapotPanel::StopRendering()
+{
+	_StopRendering();
+}
+
+
+void
+TeapotPanel::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgAddTeapot:
@@ -349,29 +379,14 @@ TeapotWindow::MessageReceived(BMessage* message)
 		}
 
 		default:
-			BWindow::MessageReceived(message);
+			BView::MessageReceived(message);
 			break;
 	}
 }
 
 
-bool
-TeapotWindow::QuitRequested()
-{
-	_StopRendering();
-
-	// Send result back to main window
-	BMessage result(kMsgTeapotResult);
-	result.AddFloat("fps", fGLView->CurrentFPS());
-	result.AddInt32("teapots", fGLView->TeapotCount());
-	fTarget.SendMessage(&result);
-
-	return true;
-}
-
-
 void
-TeapotWindow::_UpdateCountLabel()
+TeapotPanel::_UpdateCountLabel()
 {
 	BString label;
 	label.SetToFormat("Teapots: %" B_PRId32, fGLView->TeapotCount());
@@ -380,19 +395,19 @@ TeapotWindow::_UpdateCountLabel()
 
 
 /*static*/ int32
-TeapotWindow::_RenderThread(void* data)
+TeapotPanel::_RenderThread(void* data)
 {
-	TeapotWindow* window = static_cast<TeapotWindow*>(data);
+	TeapotPanel* window = static_cast<TeapotPanel*>(data);
 
 	while (window->fRendering) {
-		if (window->LockWithTimeout(50000) == B_OK) {
+		if (window->LockLooperWithTimeout(50000) == B_OK) {
 			window->fGLView->Render();
 
 			BString fpsText;
 			fpsText.SetToFormat("FPS: %.1f", window->fGLView->CurrentFPS());
 			window->fFPSLabel->SetText(fpsText.String());
 
-			window->Unlock();
+			window->UnlockLooper();
 		}
 		snooze(16667); // ~60 FPS target
 	}
@@ -402,7 +417,7 @@ TeapotWindow::_RenderThread(void* data)
 
 
 void
-TeapotWindow::_StartRendering()
+TeapotPanel::_StartRendering()
 {
 	if (fRendering)
 		return;
@@ -417,7 +432,7 @@ TeapotWindow::_StartRendering()
 
 
 void
-TeapotWindow::_StopRendering()
+TeapotPanel::_StopRendering()
 {
 	if (!fRendering)
 		return;
