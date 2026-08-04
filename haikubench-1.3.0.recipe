@@ -10,16 +10,22 @@ Features:
 * 24-test 2D benchmark from basic fills to software 3D teapot rendering
 * 2D hardware acceleration detection via accelerant driver identification
 * OpenGL GPU benchmark (fill rate, geometry, textures, blending, stencil)
+* GPU vs software A/B comparison that proves rendering runs on the hardware
 * Vulkan compute benchmark (optional, works with lavapipe or native drivers)
 * OpenGL teapot stress test with configurable teapot count
+* Tabbed benchmark deck hosting every graphics benchmark in one window
+* Demoscene splash screen (pure app_server 2D — no OpenGL required)
+* Localized with the Haiku Locale Kit (English, Italian)
+* Scriptable via hey (get Score/Results, run benchmarks)
 * Real-time CPU/GPU temperature monitoring
+* SPEC-style composite score across 8 categories (baseline = 1000)
 * Export results to Markdown and JSON"
 HOMEPAGE="https://github.com/atomozero/HaikuBench"
-COPYRIGHT="2025 Andrea Bernardi"
+COPYRIGHT="2025-2026 Andrea Bernardi"
 LICENSE="MIT"
 REVISION="1"
 SOURCE_URI="https://github.com/atomozero/HaikuBench/archive/v$portVersion.tar.gz"
-CHECKSUM_SHA256="de472772cee2137ea8e94101553ea62bf2f11d1b59e892963765b1f10ceb0bc3"
+CHECKSUM_SHA256="0000000000000000000000000000000000000000000000000000000000000000"
 SOURCE_DIR="HaikuBench-$portVersion"
 
 ARCHITECTURES="all !x86_gcc2"
@@ -45,19 +51,29 @@ BUILD_PREREQUIRES="
 	cmd:g++$secondaryArchSuffix
 	cmd:make
 	cmd:rc
+	cmd:collectcatkeys
+	cmd:linkcatkeys
 	"
 
 BUILD()
 {
+	# `make` links the binary and embeds the signature/version/icon resources
+	# from HaikuBench.rdef. `make catalogs` compiles the committed translation
+	# catkeys into binary locale catalogs.
 	make $jobArgs
-	rc -o HaikuBench.rsrc HaikuBench.rdef
+	make catalogs
 }
 
 INSTALL()
 {
 	mkdir -p $appsDir
 	cp HaikuBench $appsDir/HaikuBench
-
-	xres -o $appsDir/HaikuBench HaikuBench.rsrc
 	addAppDeskbarSymlink $appsDir/HaikuBench
+
+	# Locale catalogs, keyed by the app signature (without the "application/").
+	local catalogDir=$dataDir/locale/catalogs/x-vnd.HaikuBench
+	mkdir -p $catalogDir
+	for catalog in locales/*.catalog; do
+		[ -f "$catalog" ] && cp "$catalog" $catalogDir/
+	done
 }

@@ -8,7 +8,7 @@
 
 #include <Messenger.h>
 #include <StringView.h>
-#include <Window.h>
+#include <View.h>
 
 
 enum {
@@ -29,13 +29,20 @@ struct VulkanBenchResults {
 };
 
 
-class VulkanBenchWindow : public BWindow {
+// Vulkan benchmark as a tab panel. Formerly a standalone BWindow; now a BView
+// so it can live inside the benchmark deck's BTabView. Reports results to the
+// main window via the target messenger, unchanged.
+class VulkanBenchPanel : public BView {
 public:
-								VulkanBenchWindow(BMessenger target);
-	virtual						~VulkanBenchWindow();
+								VulkanBenchPanel(BMessenger target);
+	virtual						~VulkanBenchPanel();
 
+	virtual	void				AttachedToWindow();
 	virtual	void				MessageReceived(BMessage* message);
-	virtual	bool				QuitRequested();
+
+			// True while a benchmark thread is running (the deck blocks
+			// closing while any panel is busy).
+			bool				IsBusy() const { return fBenchThread >= 0; }
 
 private:
 			void				_RunBenchmark();

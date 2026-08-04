@@ -7,9 +7,10 @@ resource app_signature "application/x-vnd.HaikuBench";
 
 resource app_flags B_SINGLE_LAUNCH;
 
+// Keep in sync with Version.h (HAIKUBENCH_VERSION).
 resource app_version {
 	major  = 1,
-	middle = 1,
+	middle = 3,
 	minor  = 0,
 
 	variety = B_APPV_FINAL,

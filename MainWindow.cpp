@@ -12,9 +12,12 @@
 #include <FindDirectory.h>
 #include <GroupLayout.h>
 #include <LayoutBuilder.h>
+#include <MenuBar.h>
+#include <MenuItem.h>
 #include <Message.h>
 #include <Messenger.h>
 #include <Path.h>
+#include <PropertyInfo.h>
 #include <SeparatorView.h>
 #include <StringView.h>
 
@@ -24,12 +27,19 @@
 #include <time.h>
 
 #include "Bench2DWindow.h"
+#include "BenchDeckWindow.h"
 #include "GpuBenchWindow.h"
 #include "ScoreBaseline.h"
+#include "Settings.h"
 #include "SysBenchmark.h"
 #include "TeapotWindow.h"
 #include "Version.h"
 #include "VulkanBenchWindow.h"
+
+#include <Catalog.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "MainWindow"
 
 
 static const rgb_color kDarkBg = {13, 17, 23, 255};
@@ -70,6 +80,8 @@ MainWindow::MainWindow()
 			" \xE2\x80\x94 System Benchmark Suite",
 		B_TITLED_WINDOW,
 		B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE),
+	fSplashItem(NULL),
+	fDeck(NULL),
 	fBench2DFPS(0.0f),
 	fGpuScore(0.0f),
 	fVkScore(0.0f),
@@ -101,6 +113,10 @@ MainWindow::~MainWindow()
 void
 MainWindow::MessageReceived(BMessage* message)
 {
+	// Scripting (hey) commands arrive as B_GET_PROPERTY / B_EXECUTE_PROPERTY.
+	if (_HandleScripting(message))
+		return;
+
 	switch (message->what) {
 		case kMsgTempUpdate:
 			_UpdateTemperature();
@@ -111,8 +127,10 @@ MainWindow::MessageReceived(BMessage* message)
 			if (fSysBenchThread >= 0)
 				break;
 
-			fSysStatusLabel->SetText("Running system benchmarks...");
+			fSysStatusLabel->SetText(B_TRANSLATE("Running system benchmarks..."));
 			fSysStatusLabel->SetHighColor(kYellow);
+			_SetHeaderStatus(kHeaderProgress,
+				B_TRANSLATE("Running system benchmarks..."));
 			fSysBenchThread = spawn_thread(_SysBenchThread,
 				"sys_benchmark", B_NORMAL_PRIORITY, this);
 			if (fSysBenchThread >= 0)
@@ -127,24 +145,27 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (fRunAllState == 0) {
 				fSysStatusLabel->SetText(
-					"Run All: system done, starting 2D...");
+					B_TRANSLATE("Run All: system done, starting 2D..."));
 				fSysStatusLabel->SetHighColor(kYellow);
 				fRunAllState = 1;
+				_SetHeaderStatus(kHeaderProgress,
+					B_TRANSLATE("Run All: system done, starting 2D..."));
 				PostMessage(kMsgRun2DBenchmark);
 			} else {
 				fSysStatusLabel->SetText(
-					"System benchmark complete!");
+					B_TRANSLATE("System benchmark complete!"));
 				fSysStatusLabel->SetHighColor(kGreen);
+				_SetHeaderStatus(kHeaderDone,
+					B_TRANSLATE("System benchmark complete!"));
 			}
 			break;
 		}
 
 		case kMsgRunBenchmark:
-		{
-			TeapotWindow* win = new TeapotWindow(BMessenger(this));
-			win->Show();
+			// Teapot is interactive — just reveal its tab (it starts
+			// animating on its own).
+			_EnsureDeck()->ShowTab(kDeckTabTeapot);
 			break;
-		}
 
 		case kMsgTeapotResult:
 		{
@@ -166,11 +187,8 @@ MainWindow::MessageReceived(BMessage* message)
 		}
 
 		case kMsgRun2DBenchmark:
-		{
-			Bench2DWindow* win = new Bench2DWindow(BMessenger(this));
-			win->Show();
+			_EnsureDeck()->RunTab(kDeckTab2D);
 			break;
-		}
 
 		case kMsgBench2DResult:
 		{
@@ -196,7 +214,9 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (fRunAllState == 1) {
 				fSysStatusLabel->SetText(
-					"Run All: 2D done, starting GPU...");
+					B_TRANSLATE("Run All: 2D done, starting GPU..."));
+				_SetHeaderStatus(kHeaderProgress,
+					B_TRANSLATE("Run All: 2D done, starting GPU..."));
 				fRunAllState = 2;
 				PostMessage(kMsgRunGpuBenchmark);
 			}
@@ -204,11 +224,8 @@ MainWindow::MessageReceived(BMessage* message)
 		}
 
 		case kMsgRunGpuBenchmark:
-		{
-			GpuBenchWindow* win = new GpuBenchWindow(BMessenger(this));
-			win->Show();
+			_EnsureDeck()->RunTab(kDeckTabGpu);
 			break;
-		}
 
 		case kMsgGpuBenchResult:
 		{
@@ -242,7 +259,9 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (fRunAllState == 2) {
 				fSysStatusLabel->SetText(
-					"Run All: GPU done, starting Vulkan...");
+					B_TRANSLATE("Run All: GPU done, starting Vulkan..."));
+				_SetHeaderStatus(kHeaderProgress,
+					B_TRANSLATE("Run All: GPU done, starting Vulkan..."));
 				fRunAllState = 3;
 				PostMessage(kMsgRunVkBenchmark);
 			}
@@ -250,12 +269,8 @@ MainWindow::MessageReceived(BMessage* message)
 		}
 
 		case kMsgRunVkBenchmark:
-		{
-			VulkanBenchWindow* win = new VulkanBenchWindow(
-				BMessenger(this));
-			win->Show();
+			_EnsureDeck()->RunTab(kDeckTabVulkan);
 			break;
-		}
 
 		case kMsgVkBenchResult:
 		{
@@ -280,8 +295,9 @@ MainWindow::MessageReceived(BMessage* message)
 
 			if (fRunAllState == 3) {
 				fRunAllState = -1;
-				fSysStatusLabel->SetText("Run All complete!");
+				fSysStatusLabel->SetText(B_TRANSLATE("Run All complete!"));
 				fSysStatusLabel->SetHighColor(kGreen);
+				_SetHeaderStatus(kHeaderDone, B_TRANSLATE("Run All complete!"));
 			}
 			break;
 		}
@@ -293,9 +309,20 @@ MainWindow::MessageReceived(BMessage* message)
 
 			fRunAllState = 0;
 			fSysStatusLabel->SetText(
-				"Run All: starting system benchmark...");
+				B_TRANSLATE("Run All: starting system benchmark..."));
 			fSysStatusLabel->SetHighColor(kYellow);
+			_SetHeaderStatus(kHeaderProgress,
+				B_TRANSLATE("Run All: starting system benchmark..."));
 			PostMessage(kMsgRunSysBench);
+			break;
+		}
+
+		case kMsgToggleSplash:
+		{
+			bool show = fSplashItem != NULL && !fSplashItem->IsMarked();
+			if (fSplashItem != NULL)
+				fSplashItem->SetMarked(show);
+			Settings::SetShowSplash(show);
 			break;
 		}
 
@@ -313,6 +340,15 @@ MainWindow::MessageReceived(BMessage* message)
 bool
 MainWindow::QuitRequested()
 {
+	// Tear down the deck for real (its own QuitRequested only hides it, which
+	// would otherwise block application shutdown). Quit() bypasses that and
+	// destroys the window and its panels.
+	if (fDeck != NULL) {
+		if (fDeck->Lock())
+			fDeck->Quit();
+		fDeck = NULL;
+	}
+
 	be_app->PostMessage(B_QUIT_REQUESTED);
 	return true;
 }
@@ -329,19 +365,19 @@ MainWindow::_BuildLayout()
 
 	// Buttons
 	BButton* sysButton = new BButton("sysBtn",
-		"System Bench", new BMessage(kMsgRunSysBench));
+		B_TRANSLATE("System Bench"), new BMessage(kMsgRunSysBench));
 	BButton* bench2DButton = new BButton("bench2dBtn",
-		"2D Bench", new BMessage(kMsgRun2DBenchmark));
+		B_TRANSLATE("2D Bench"), new BMessage(kMsgRun2DBenchmark));
 	BButton* gpuButton = new BButton("gpuBtn",
-		"GPU Bench", new BMessage(kMsgRunGpuBenchmark));
+		B_TRANSLATE("GPU Bench"), new BMessage(kMsgRunGpuBenchmark));
 	BButton* teapotButton = new BButton("teapotBtn",
-		"Teapot 3D", new BMessage(kMsgRunBenchmark));
+		B_TRANSLATE("Teapot 3D"), new BMessage(kMsgRunBenchmark));
 	BButton* vulkanButton = new BButton("vulkanBtn",
-		"Vulkan", new BMessage(kMsgRunVkBenchmark));
+		B_TRANSLATE("Vulkan"), new BMessage(kMsgRunVkBenchmark));
 	BButton* runAllButton = new BButton("runAllBtn",
-		"Run All", new BMessage(kMsgRunAllBench));
+		B_TRANSLATE("Run All"), new BMessage(kMsgRunAllBench));
 	BButton* exportButton = new BButton("exportBtn",
-		"Export .md", new BMessage(kMsgExportResults));
+		B_TRANSLATE("Export .md"), new BMessage(kMsgExportResults));
 
 	BLayoutBuilder::Group<>(topView, B_VERTICAL, 6)
 		.SetInsets(12, 12, 12, 12)
@@ -361,8 +397,46 @@ MainWindow::_BuildLayout()
 		.End()
 	.End();
 
-	SetLayout(new BGroupLayout(B_VERTICAL));
-	AddChild(topView);
+	fHeader = new HeaderView("header");
+	fHeader->SetState(kHeaderIdle);
+	fHeader->SetSubtitle(B_TRANSLATE("Ready \xE2\x80\x94 press a benchmark to start"));
+
+	// Settings menu — currently just the splash toggle, persisted via Settings.
+	BMenuBar* menuBar = new BMenuBar("menubar");
+	BMenu* settingsMenu = new BMenu(B_TRANSLATE("Settings"));
+	fSplashItem = new BMenuItem(
+		B_TRANSLATE("Show splash screen at startup"),
+		new BMessage(kMsgToggleSplash));
+	fSplashItem->SetMarked(Settings::ShowSplash());
+	settingsMenu->AddItem(fSplashItem);
+	menuBar->AddItem(settingsMenu);
+
+	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
+		.Add(menuBar)
+		.Add(fHeader)
+		.Add(topView)
+	.End();
+}
+
+
+void
+MainWindow::_SetHeaderStatus(HeaderState state, const char* subtitle)
+{
+	if (fHeader == NULL)
+		return;
+	fHeader->SetState(state);
+	fHeader->SetSubtitle(subtitle);
+}
+
+
+BenchDeckWindow*
+MainWindow::_EnsureDeck()
+{
+	// The deck is a persistent singleton: created on first use, hidden (not
+	// destroyed) on close so its GL contexts and detected device info survive.
+	if (fDeck == NULL)
+		fDeck = new BenchDeckWindow(BMessenger(this));
+	return fDeck;
 }
 
 
@@ -373,7 +447,7 @@ MainWindow::_CreateSystemInfoPanel()
 	box->SetViewColor(kDarkBg);
 	box->SetLowColor(kDarkBg);
 
-	BStringView* title = _MakeLabel("sysTitle", "System",
+	BStringView* title = _MakeLabel("sysTitle", B_TRANSLATE("System"),
 		kLabelWhite, 12.0f, true);
 	title->SetViewColor(kDarkBg);
 	title->SetLowColor(kDarkBg);
@@ -395,7 +469,7 @@ MainWindow::_CreateSystemInfoPanel()
 		11.0f);
 	BStringView* machineIdLabel = _MakeLabel("machineId",
 		machineId.String(), kYellow, 11.0f, true);
-	fTempLabel = _MakeLabel("temp", "Temp: reading...", kGreen,
+	fTempLabel = _MakeLabel("temp", B_TRANSLATE("Temp: reading..."), kGreen,
 		11.0f, true);
 
 	BLayoutBuilder::Group<>(inner, B_VERTICAL, 2)
@@ -418,7 +492,7 @@ MainWindow::_CreateResultsPanel()
 	box->SetViewColor(kDarkBg);
 	box->SetLowColor(kDarkBg);
 
-	BStringView* title = _MakeLabel("resTitle", "Benchmark Results",
+	BStringView* title = _MakeLabel("resTitle", B_TRANSLATE("Benchmark Results"),
 		kLabelWhite, 12.0f, true);
 	title->SetViewColor(kDarkBg);
 	title->SetLowColor(kDarkBg);
@@ -433,19 +507,19 @@ MainWindow::_CreateResultsPanel()
 	static const rgb_color kMagenta = {220, 120, 180, 255};
 
 	// Section headers
-	BStringView* cpuHeader = _MakeLabel("cpuH", "CPU", kCyan,
+	BStringView* cpuHeader = _MakeLabel("cpuH", B_TRANSLATE("CPU"), kCyan,
 		11.0f, true);
-	BStringView* ramHeader = _MakeLabel("ramH", "Memory", kOrange,
+	BStringView* ramHeader = _MakeLabel("ramH", B_TRANSLATE("Memory"), kOrange,
 		11.0f, true);
-	BStringView* cacheHeader = _MakeLabel("cacheH", "Cache", kYellow,
+	BStringView* cacheHeader = _MakeLabel("cacheH", B_TRANSLATE("Cache"), kYellow,
 		11.0f, true);
 	BStringView* kernelHeader = _MakeLabel("kernH",
-		"Kernel (Semaphores, Threads, Ports, Areas)", kPurple,
+		B_TRANSLATE("Kernel (Semaphores, Threads, Ports, Areas)"), kPurple,
 		11.0f, true);
 	BStringView* msgHeader = _MakeLabel("msgH",
-		"Messaging (BMessage, BLooper)", kMagenta, 11.0f, true);
+		B_TRANSLATE("Messaging (BMessage, BLooper)"), kMagenta, 11.0f, true);
 	BStringView* graphicsHeader = _MakeLabel("gfxH",
-		"Graphics", kGreen, 11.0f, true);
+		B_TRANSLATE("Graphics"), kGreen, 11.0f, true);
 
 	// Create test labels - use fixed-width placeholder so layout
 	// doesn't resize when results appear
@@ -463,7 +537,7 @@ MainWindow::_CreateResultsPanel()
 	}
 
 	fSysStatusLabel = _MakeLabel("sysStatus",
-		"Press 'System Bench' to start", kGray, 10.0f);
+		B_TRANSLATE("Press 'System Bench' to start"), kGray, 10.0f);
 
 	// Graphics results — same format as system bench:
 	//   "  %-22s  %8s unit"
@@ -494,7 +568,7 @@ MainWindow::_CreateResultsPanel()
 
 	// Score labels (SPEC-style, baseline = 1000)
 	BStringView* scoreHeader = _MakeLabel("scoreH",
-		"Score (baseline = 1000)", kGreen, 11.0f, true);
+		B_TRANSLATE("Score (baseline = 1000)"), kGreen, 11.0f, true);
 	{
 		BFont scoreMono(be_fixed_font);
 		scoreMono.SetSize(11.0f);
@@ -640,7 +714,7 @@ MainWindow::_UpdateTemperature()
 		fTempLabel->SetText(tempText.String());
 	} else {
 		fTempLabel->SetHighColor(kGray);
-		fTempLabel->SetText("Temp: no sensors found");
+		fTempLabel->SetText(B_TRANSLATE("Temp: no sensors found"));
 	}
 }
 
@@ -744,6 +818,12 @@ MainWindow::_TestCallback(int32 test, void* cookie)
 			SysBenchmark::kNumTests, (int32)kBenchRuns);
 		window->fSysStatusLabel->SetText(status.String());
 
+		BString headerSub;
+		headerSub.SetToFormat("Running: %s (%" B_PRId32 "/%d)...",
+			SysBenchmark::TestName(test), test + 1,
+			SysBenchmark::kNumTests);
+		window->_SetHeaderStatus(kHeaderProgress, headerSub.String());
+
 		// Mark current test as running
 		BString text;
 		text.SetToFormat("  %-22s  running...",
@@ -788,8 +868,8 @@ MainWindow::_ExportResults()
 
 	FILE* f = fopen(filePath.String(), "w");
 	if (f == NULL) {
-		BAlert* alert = new BAlert("Error",
-			"Could not create export file.", "OK");
+		BAlert* alert = new BAlert(B_TRANSLATE("Error"),
+			B_TRANSLATE("Could not create export file."), B_TRANSLATE("OK"));
 		alert->Go();
 		return;
 	}
@@ -1042,6 +1122,135 @@ MainWindow::_ExportResults()
 	BString msg;
 	msg.SetToFormat("Results exported to:\n%s\n%s",
 		filePath.String(), jsonPath.String());
-	BAlert* alert = new BAlert("Export", msg.String(), "OK");
+	BAlert* alert = new BAlert(B_TRANSLATE("Export"), msg.String(), B_TRANSLATE("OK"));
 	alert->Go();
+}
+
+
+//	#pragma mark - Scripting (hey)
+
+
+// Exposes HaikuBench to `hey` and the scripting kit. Examples:
+//   hey HaikuBench get Score
+//   hey HaikuBench get Results
+//   hey HaikuBench do RunAll
+//   hey HaikuBench do SystemBench
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+static property_info sPropertyInfo[] = {
+	{ "Score",
+		{ B_GET_PROPERTY, 0 },
+		{ B_DIRECT_SPECIFIER, 0 },
+		"Overall SPEC-style score (0 until a benchmark has run).",
+		0, { B_DOUBLE_TYPE }, {}, {} },
+	{ "Results",
+		{ B_GET_PROPERTY, 0 },
+		{ B_DIRECT_SPECIFIER, 0 },
+		"Latest results as a compact JSON string.",
+		0, { B_STRING_TYPE }, {}, {} },
+	{ "RunAll",
+		{ B_EXECUTE_PROPERTY, 0 },
+		{ B_DIRECT_SPECIFIER, 0 },
+		"Run every benchmark in sequence.",
+		0, {}, {}, {} },
+	{ "SystemBench",
+		{ B_EXECUTE_PROPERTY, 0 },
+		{ B_DIRECT_SPECIFIER, 0 },
+		"Run the system (CPU/memory/cache/kernel) benchmark.",
+		0, {}, {}, {} },
+	{ 0 }
+};
+#pragma GCC diagnostic pop
+
+static const char* kBenchSuite = "suite/vnd.HaikuBench-benchmark";
+
+
+status_t
+MainWindow::GetSupportedSuites(BMessage* message)
+{
+	message->AddString("suites", kBenchSuite);
+	BPropertyInfo info(sPropertyInfo);
+	message->AddFlat("messages", &info);
+	return BWindow::GetSupportedSuites(message);
+}
+
+
+BHandler*
+MainWindow::ResolveSpecifier(BMessage* message, int32 index,
+	BMessage* specifier, int32 what, const char* property)
+{
+	BPropertyInfo info(sPropertyInfo);
+	if (info.FindMatch(message, index, specifier, what, property) >= 0)
+		return this;
+	return BWindow::ResolveSpecifier(message, index, specifier, what,
+		property);
+}
+
+
+float
+MainWindow::_OverallScore()
+{
+	if (!fSysResults.valid)
+		return 0.0f;
+	ScoreResult score = ComputeScore(fSysResults, fBench2DFPS, fGpuScore,
+		fVkScore);
+	return score.valid ? score.overall : 0.0f;
+}
+
+
+bool
+MainWindow::_HandleScripting(BMessage* message)
+{
+	if (message->what != B_GET_PROPERTY
+		&& message->what != B_EXECUTE_PROPERTY) {
+		return false;
+	}
+
+	int32 index;
+	BMessage specifier;
+	int32 what;
+	const char* property;
+	if (message->GetCurrentSpecifier(&index, &specifier, &what, &property)
+			!= B_OK) {
+		return false;
+	}
+
+	BMessage reply(B_REPLY);
+
+	if (message->what == B_GET_PROPERTY && strcmp(property, "Score") == 0) {
+		reply.AddDouble("result", _OverallScore());
+	} else if (message->what == B_GET_PROPERTY
+			&& strcmp(property, "Results") == 0) {
+		BString json;
+		BString tmp;
+		json << "{";
+		json << "\"version\":\"" << HAIKUBENCH_VERSION << "\",";
+		json << "\"machine_id\":\"" << SysBenchmark::GetMachineId() << "\",";
+		json << "\"system_valid\":"
+			<< (fSysResults.valid ? "true" : "false") << ",";
+		tmp.SetToFormat("\"overall\":%.1f,", _OverallScore());
+		json << tmp;
+		tmp.SetToFormat("\"bench2d_fps\":%.1f,", fBench2DFPS);
+		json << tmp;
+		tmp.SetToFormat("\"gpu_score\":%.1f,", fGpuScore);
+		json << tmp;
+		tmp.SetToFormat("\"vk_score\":%.1f", fVkScore);
+		json << tmp;
+		json << "}";
+		reply.AddString("result", json);
+	} else if (message->what == B_EXECUTE_PROPERTY
+			&& strcmp(property, "RunAll") == 0) {
+		PostMessage(kMsgRunAllBench);
+		reply.AddString("result", "Run All started");
+	} else if (message->what == B_EXECUTE_PROPERTY
+			&& strcmp(property, "SystemBench") == 0) {
+		PostMessage(kMsgRunSysBench);
+		reply.AddString("result", "System benchmark started");
+	} else {
+		return false;	// not one of ours — let BWindow handle it
+	}
+
+	reply.AddInt32("error", B_OK);
+	message->SendReply(&reply);
+	return true;
 }

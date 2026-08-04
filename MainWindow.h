@@ -11,11 +11,16 @@
 #include <StringView.h>
 #include <Window.h>
 
+#include "HeaderView.h"
 #include "SysBenchmark.h"
+
+class BenchDeckWindow;
+class BMenuItem;
 
 
 enum {
 	kMsgRunSysBench		= 'rnsb',
+	kMsgToggleSplash	= 'tgsp',
 	kMsgRunBenchmark	= 'rnbm',
 	kMsgRun2DBenchmark	= 'rn2d',
 	kMsgRunGpuBenchmark	= 'rngp',
@@ -35,7 +40,16 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 	virtual	bool				QuitRequested();
 
+			// Scripting (hey) — see the property table in MainWindow.cpp.
+	virtual	status_t			GetSupportedSuites(BMessage* message);
+	virtual	BHandler*			ResolveSpecifier(BMessage* message,
+									int32 index, BMessage* specifier,
+									int32 what, const char* property);
+
 private:
+			bool				_HandleScripting(BMessage* message);
+			float				_OverallScore();
+
 			void				_BuildLayout();
 			BView*				_CreateSystemInfoPanel();
 			BView*				_CreateResultsPanel();
@@ -43,9 +57,21 @@ private:
 			void				_UpdateTemperature();
 			void				_UpdateSysResults();
 			void				_ExportResults();
+			void				_SetHeaderStatus(HeaderState state,
+									const char* subtitle);
+			BenchDeckWindow*	_EnsureDeck();
 
 	static	int32				_SysBenchThread(void* data);
 	static	int32				_TestCallback(int32 test, void* cookie);
+
+			// Settings menu item (checkable splash toggle)
+			BMenuItem*			fSplashItem;
+
+			// Header banner
+			HeaderView*			fHeader;
+
+			// Tabbed benchmark deck (lazily created, persists hidden)
+			BenchDeckWindow*	fDeck;
 
 			// System info
 			BStringView*		fSystemLabel;

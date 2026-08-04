@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.3.0 — 2026-08-03
+
+Theme: first impression and integration — a finished feel, and a first-class
+Haiku citizen (localized, scriptable, coherently packaged).
+
+### Demoscene splash screen
+
+- New `SplashWindow`/`SplashView`: a 64k-intro style launch screen — a rotating
+  red Utah teapot with the word **HaikuBench** orbiting it, over a starfield and
+  drifting colour blobs, with a sine-wave scroller along the bottom.
+- Rendered **entirely with the app_server 2D API** (a tiny software 3D
+  renderer: surface-of-revolution teapot mesh with spout and handle, painter's
+  algorithm, flat shading). No OpenGL, Mesa or glut — so the splash runs on any
+  Haiku install, including ones with no GL stack at all.
+- Auto-dismisses after a few seconds; a click or key skips it; then the main
+  window appears.
+- Can be turned off permanently from the new **Settings** menu ("Show splash
+  screen at startup"), persisted under `B_USER_SETTINGS_DIRECTORY`. The
+  `HAIKUBENCH_NOSPLASH=1` environment override still forces it off for scripted
+  / `hey` runs.
+
+### Settings
+
+- Added a menu bar with a **Settings** menu and a persistent settings store
+  (`Settings` module, flattened `BMessage` in the user settings directory).
+  First entry: the splash-screen toggle above.
+
+### Haiku Locale Kit localization
+
+- UI chrome is wrapped in `B_TRANSLATE` with per-file `B_TRANSLATION_CONTEXT`
+  and linked against `liblocalestub`. 77 translatable strings across 7 contexts.
+- Ships an **Italian** translation (`locales/it.catkeys` → `it.catalog`);
+  English is the built-in reference (`locales/en.catkeys`).
+- New `make catkeys` (rescan sources → reference catkeys) and `make catalogs`
+  (compile per-language catalogs) targets.
+- Test names and export field keys are deliberately **not** translated, so
+  Markdown/JSON reports stay stable for leaderboards and regression tooling.
+
+### Scripting (hey)
+
+- Added a scripting suite (`suite/vnd.HaikuBench-benchmark`) on the main window:
+  - `get Score` — overall SPEC-style score
+  - `get Results` — latest results as a compact JSON string
+  - `do RunAll` / `do SystemBench` — trigger benchmarks
+- Makes the app automatable from the command line and CI.
+
+### Coherence and packaging
+
+- **Version drift fixed**: `HaikuBench.rdef` was still 1.1.0 while `Version.h`
+  had moved on. Both are now 1.3.0, with a cross-reference comment.
+- `make` now embeds the app **signature, version and icon** resources from the
+  rdef into the binary (previously only the recipe did this, so a locally built
+  binary carried no signature/version at all).
+- Recipe updated to 1.3.0: builds and installs the locale catalogs, and relies
+  on `make` for resource embedding.
+- Added a `ROADMAP.md` documenting the coherence audit and the plan, and
+  extended `.gitignore` for the new build artifacts.
+
 ## 1.2.0 — 2026-07-12
 
 ### GPU Benchmark: hardware acceleration proof
